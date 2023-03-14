@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import xarray as xr
 from os.path import sep
 from matplotlib import pyplot as plt
 
@@ -203,3 +204,108 @@ def averaging_frame(frame_array, average_window):
             averaged_array[current_frame] = np.mean(frame_array[(current_frame - int(np.floor(average_window/2))) :(current_frame + int(np.ceil(average_window/2)))])
             
     return averaged_array
+
+
+
+
+
+
+
+def get_raw_F(ROI_NUMBER, napari_roi, raw_data):
+    ROI_number = ROI_NUMBER
+    F_array_output = np.zeros((raw_data['volumes [s]'].size, ROI_number))
+    stack4dMC_numpy = raw_data.to_numpy()
+    for time_point in range(raw_data['volumes [s]'].size):
+        current_volume = stack4dMC_numpy[time_point,:,:,:]
+        for ROI_index in range(1, ROI_number + 1):
+            mask = napari_roi == ROI_index
+            F_array_output[time_point, ROI_index - 1] =current_volume[mask].mean() 
+            
+    fig, axs = plt.subplots(ROI_number, 1, figsize=(13, 12))
+    for i in range(ROI_number):
+        ax = axs[i]
+        ax.plot(F_array_output[:,i])
+    fig.supylabel('F',fontsize=20)
+    plt.xlabel('Frame Number', fontsize=20)
+    plt.show()
+    return F_array_output
+
+
+
+
+def get_dff_array(raw_F_array, ROI_num, F_zero_cutoff):
+    dF_F_array_output = np.zeros((len(raw_F_array), ROI_num))
+    F_zero = np.quantile(raw_F_array, F_zero_cutoff, axis = 0)
+    for F_zero_index in range(ROI_num):
+        dF_F_array_output[:,F_zero_index] = (raw_F_array[:,F_zero_index] - F_zero[F_zero_index])/F_zero[F_zero_index]
+    
+    fig, axs = plt.subplots(ROI_num, 1, figsize=(13, 12))
+    for i in range(ROI_num):
+        ax = axs[i]
+        ax.plot(dF_F_array_output[:,i])
+    fig.supylabel('dF/F',fontsize=20)
+    plt.xlabel('Frame Number', fontsize=20)
+    plt.show()
+    return dF_F_array_output
+
+
+
+def normalizing_dff_array(df_f_input,ROI_num, normalize_cutoff):
+    dF_F_array_normalized_output = np.zeros((len(df_f_input), ROI_num))
+    dFF_95 = np.quantile(df_f_input, normalize_cutoff, axis = 0)
+    for current_ROI in range(ROI_num):
+        dF_F_array_normalized_output[:,current_ROI ] = df_f_input[:,current_ROI ]/dFF_95[current_ROI]
+
+    fig, axs = plt.subplots(ROI_num, 1, figsize=(13, 12))
+    for i in range(ROI_num):
+        ax = axs[i]
+        ax.plot(dF_F_array_normalized_output[:,i])
+    fig.supylabel('dF/F-Normalized',fontsize=20)
+    plt.xlabel('Frame Number', fontsize=20)
+    plt.show()
+    return dF_F_array_normalized_output
+
+
+
+
+
+def combine_PB_corresponding_ROI(dff_array_input, napari_ROI, ROI_num, mode, time_array_imaging):
+    ROI_number_combined = ROI_num
+    dF_F_array_8_roi_output = np.zeros((len(dff_array_input), ROI_number_combined))
+    if mode == 1:
+        #mode 1 for E-PG and P-EG
+        #Combine corresponding glomeruli in left and right PBs, leaving 8 ROIs for calculating PVA
+        #Rule of E-PG combination: L1+R1 (Label in napari 8,9), L8+R2(1,10), L7+R3 (2,11), L6+R4(3,12), L5+R5(4,13), L4+R6(5,14) #L3+R7(6,15), L2+R8(7,16)
+        for combined_ROI_index in range(ROI_number_combined):
+            if combined_ROI_index == ROI_number_combined - 1:
+                #Count pixel number to determine the weight of glomeruli L1 & R1 (And put it at first)
+                pixel_number_left_bridge = np.count_nonzero(napari_ROI == combined_ROI_index + 1)
+                pixel_number_right_bridge =  np.count_nonzero(napari_ROI == combined_ROI_index + 1 + 1)
+                left_weight = pixel_number_left_bridge/( pixel_number_left_bridge + pixel_number_right_bridge)
+                right_weight = pixel_number_right_bridge/( pixel_number_left_bridge + pixel_number_right_bridge)
+                #Put it at first
+                dF_F_array_8_roi_output[:,0] = dff_array_input[:,combined_ROI_index] * left_weight +  dff_array_input[:,combined_ROI_index + 1] * right_weight
+            else:
+                #Count pixel number to determine the weight of the rest of each glomeruli 
+                pixel_number_left_bridge = np.count_nonzero(napari_ROI == combined_ROI_index + 1)
+                pixel_number_right_bridge =  np.count_nonzero(napari_ROI == combined_ROI_index + 1 + 9)
+                left_weight = pixel_number_left_bridge/( pixel_number_left_bridge + pixel_number_right_bridge)
+                right_weight = pixel_number_right_bridge/( pixel_number_left_bridge + pixel_number_right_bridge)
+                dF_F_array_8_roi_output[:,combined_ROI_index + 1] = dff_array_input[:,combined_ROI_index] * left_weight +  dff_array_input[:,combined_ROI_index + 9] * right_weight
+      
+    if mode == 2:
+        #mode 2 for delta 7
+        #Combine corresponding glomeruli in left and right PBs, leaving 8 ROIs for calculating PVA
+        #Rule of delta combination: L9+L1+R8 (Label in napari 8,8,16), L8+R1+R9(1,9,9), L7+R2 (2,10), L6+R3(3,11), L5+R4(4,12), L4+R5(5,13) #L3+R6(6,14), L2+R7(7,15)
+        for combined_ROI_index in range(ROI_number_combined):
+            pixel_number_left_bridge = np.count_nonzero(napari_ROI == combined_ROI_index + 1)
+            pixel_number_right_bridge =  np.count_nonzero(napari_ROI == combined_ROI_index + 1 + 8)
+            left_weight = pixel_number_left_bridge/( pixel_number_left_bridge + pixel_number_right_bridge)
+            right_weight = pixel_number_right_bridge/( pixel_number_left_bridge + pixel_number_right_bridge)
+            dF_F_array_8_roi_output[:,combined_ROI_index] = dff_array_input[:,combined_ROI_index] * left_weight +  dff_array_input[:,combined_ROI_index + 8] * right_weight
+    
+    return dF_F_array_8_roi_output
+        
+
+
+  

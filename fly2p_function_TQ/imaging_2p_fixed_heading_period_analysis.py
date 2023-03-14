@@ -236,3 +236,18 @@ def bump_amplitude_during_stopPeriod(stop_index_array,bump_amplitude_array, volu
     df_bump_amplitude_array_stop ['bump_amplitude_10s_after_stop'] = stop_after_10s
     
     return df_bump_amplitude_array_stop
+
+
+
+
+
+def calculate_angle_difference_between_two_time_point(pd_start_point, pd_end_point):
+    angle_difference = np.zeros(len(pd_start_point))
+    for current_point in range(len(pd_start_point)):
+        angle_difference[current_point] = pd_end_point[current_point] - pd_start_point[current_point]
+        if np.abs(angle_difference[current_point] ) > 180:
+            if angle_difference[current_point]  < 0:
+                angle_difference[current_point] = angle_difference[current_point]  + 360
+            else:
+                angle_difference[current_point] = angle_difference[current_point]  - 360
+    return angle_difference
