@@ -3,10 +3,11 @@ import os
 import xarray as xr
 from os.path import sep
 from matplotlib import pyplot as plt
+from tifffile import tifffile
 
 
 
-
+#This is for fly before TQfly034, then brucker changes the setting and now one ome.tif file is a volume but not a slice
 def combine_single_tiff(slice_num, cycle_num, file_dir):
     #Create a list for the directory of every single ome-tiff file of the selected trial
     import tifftools
@@ -31,6 +32,33 @@ def combine_single_tiff(slice_num, cycle_num, file_dir):
     
     
     return image_combi, tiff_files_li
+
+
+
+def combine_single_tiff_V2(slice_num, cycle_num, file_dir):
+    #Create a list for the directory of every single ome-tiff file of the selected trial
+    import tifftools
+    import os
+    from matplotlib import pyplot as plt
+    tiff_files_li = []
+    for ti in os.listdir(file_dir):
+        if '.ome.tif' and 'Ch2' in ti:
+            tiff_files_li.append(sep.join([file_dir, ti]))
+    tiff_files_li.sort()
+    
+    #Find the size of a single image
+    single_image_x = plt.imread(tiff_files_li[0]).shape[0]
+    single_image_y = plt.imread(tiff_files_li[0]).shape[1]
+    #Create the combined image array with the right size
+    image_combi = np.zeros([cycle_num, slice_num, single_image_x,single_image_y])
+    count = 0
+    for current_cycle in range(cycle_num):
+        image_combi[current_cycle] = tifffile.imread(tiff_files_li[count])
+        count = count + 1
+    
+    
+    return image_combi, tiff_files_li
+
 
 
 
@@ -308,4 +336,33 @@ def combine_PB_corresponding_ROI(dff_array_input, napari_ROI, ROI_num, mode, tim
         
 
 
+def combine_EB_corresponding_ROI(dff_array_input, napari_ROI, ROI_num, mode, time_array_imaging):
+    ROI_number_combined = ROI_num
+    dF_F_array_8_roi_output = np.zeros((len(dff_array_input), ROI_number_combined))
+    for combined_ROI_index in range(1, ROI_number_combined+1):
+        #combine ROI1 with ROI 16
+        if combined_ROI_index == 1:
+            #Count pixel number to determine the weight of glomeruli L1 & R1 (And put it at first)
+            pixel_number_wedge_one = np.count_nonzero(napari_ROI == combined_ROI_index )
+            pixel_number_wedge_two =  np.count_nonzero(napari_ROI == combined_ROI_index + 15)
+            wedge1_weight = pixel_number_wedge_one/( pixel_number_wedge_one + pixel_number_wedge_one)
+            wedge2_weight = pixel_number_wedge_two/( pixel_number_wedge_one + pixel_number_wedge_two)
+            #Put it at first
+            dF_F_array_8_roi_output[:,0] = dff_array_input[:,combined_ROI_index - 1] * wedge1_weight +  dff_array_input[:,combined_ROI_index + 14] * wedge2_weight
+        
+        #Rest just neighboring wedge (23,45,67,89,1011,1213,1415)        
+        else:
+            index_adjust = combined_ROI_index -2
+            pixel_number_wedge_one = np.count_nonzero(napari_ROI == combined_ROI_index+index_adjust )
+            pixel_number_wedge_two =  np.count_nonzero(napari_ROI == combined_ROI_index + index_adjust+1)
+            wedge1_weight = pixel_number_wedge_one/( pixel_number_wedge_one + pixel_number_wedge_one)
+            wedge2_weight = pixel_number_wedge_two/( pixel_number_wedge_one + pixel_number_wedge_two)
+            dF_F_array_8_roi_output[:,combined_ROI_index - 1] = dff_array_input[:,combined_ROI_index  + index_adjust- 1] * wedge1_weight +  dff_array_input[:,combined_ROI_index + index_adjust] * wedge2_weight
+         
+            
+               
+    return dF_F_array_8_roi_output
+            
+            
+            
   

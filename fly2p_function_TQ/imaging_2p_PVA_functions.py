@@ -14,9 +14,10 @@ import math
 #Calculate PVA
 def PVA_radian_calcul (dff_array, frame_number, ROI_NUM):
     #Assign an angle-array for 8 ROIs ROI1(1R/1L)is0,  ROI2(2R/8L) is 45
-    #angle_array_roi_8 = [0,np.pi/4,np.pi/2,np.pi*3/4,np.pi,np.pi*5/4,np.pi*3/2,np.pi*7/4]
-    #angle_array_roi_8 = [np.pi/8,np.pi*3/8,np.pi*5/8,np.pi*7/8,np.pi*9/8,np.pi*11/8,np.pi*13/8,np.pi*15/8]
-    angle_array_roi_8 = [np.pi/8,np.pi*3/8,np.pi*5/8,np.pi*7/8,-np.pi*7/8,-np.pi*5/8,-np.pi*3/8,-np.pi/8]
+    if ROI_NUM == 8:
+        angle_array_roi_8 = [np.pi/8,np.pi*3/8,np.pi*5/8,np.pi*7/8,-np.pi*7/8,-np.pi*5/8,-np.pi*3/8,-np.pi/8]
+    elif ROI_NUM == 16:
+        angle_array_roi_8 = [np.pi/16,np.pi*3/16,np.pi*5/16,np.pi*7/16,np.pi*9/16,np.pi*11/16,np.pi*13/16,np.pi*15/16,-np.pi*15/16,-np.pi*13/16,-np.pi*11/16,-np.pi*9/16,-np.pi*7/16,-np.pi*5/16,-np.pi*3/16,-np.pi/16]
     #Define a polar 2 cartesian function 
     def pol2cart(rho, phi):
         x = rho * np.cos(phi)
