@@ -102,12 +102,12 @@ def fictrack_signal_decoding(unprocessed_heading, time_array, max_voltage, alrea
     
     #cleanedPos = np.absolute(cleanedPos)
     
-    plt.figure(figsize= (25,7))
-    plt.plot(time_array, cleanedPos)
-    plt.xlabel('Time(s)', fontsize=20)
-    plt.ylabel('Accumulated rotation (rad)', fontsize=20)
-    plt.xticks(fontsize = 15)
-    plt.yticks(fontsize = 15)
-    plt.show()
+    #plt.figure(figsize= (25,7))
+    #plt.plot(time_array, cleanedPos)
+    #plt.xlabel('Time(s)', fontsize=20)
+    #plt.ylabel('Accumulated rotation (rad)', fontsize=20)
+    #plt.xticks(fontsize = 15)
+    #plt.yticks(fontsize = 15)
+    #plt.show()
     
     return cleanedPos

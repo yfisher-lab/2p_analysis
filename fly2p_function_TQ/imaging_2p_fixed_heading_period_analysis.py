@@ -77,6 +77,7 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
     stop_after_3s = []
     stop_after_5s = []
     stop_after_10s = []
+    stop_after_35s = []
     middle_points = []
     frame_100ms_before = int(np.ceil(0.1/volume_time))
     frame_500ms_before = int(np.ceil(0.5/volume_time))
@@ -84,6 +85,7 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
     frame_3s_after_stop = int(np.ceil(3/volume_time))
     frame_5s_after_stop = int(np.ceil(5/volume_time))
     frame_10s_after_stop = int(np.ceil(10/volume_time))
+    frame_35s_after_stop = int(np.ceil(35/volume_time))
     duration_stop = []
     for current_index in range(len(stop_index_array)):
         duration_stop.append(stop_index_array[current_index,1]*volume_time)
@@ -106,6 +108,10 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
             stop_after_10s.append(PVA_array[index_of_stop + frame_10s_after_stop - 1])
         else:
             stop_after_10s.append(np.NaN)
+        if index_of_stop + frame_35s_after_stop - 1 <= stop_index_array[current_index,0]:
+            stop_after_35s.append(PVA_array[index_of_stop + frame_35s_after_stop - 1])
+        else:
+            stop_after_35s.append(np.NaN)
     
     df_PVA_stop['Period_duration'] = duration_stop
     df_PVA_stop['PVA_before_stop'] = stop_points
@@ -117,6 +123,7 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
     df_PVA_stop['PVA_3s_after_stop'] = stop_after_3s
     df_PVA_stop['PVA_5s_after_stop'] = stop_after_5s
     df_PVA_stop['PVA_10s_after_stop'] = stop_after_10s
+    df_PVA_stop['PVA_35s_after_stop'] = stop_after_35s
     return df_PVA_stop 
 
 
@@ -135,6 +142,7 @@ def forwrad_speed_during_stopPeriod(stop_index_array,forward_speed_array, volume
     stop_after_3s = []
     stop_after_5s = []
     stop_after_10s = []
+    stop_after_35s = []
     middle_points = []
     frame_100ms_before = int(np.ceil(0.1/volume_time))
     frame_500ms_before = int(np.ceil(0.5/volume_time))
@@ -142,6 +150,7 @@ def forwrad_speed_during_stopPeriod(stop_index_array,forward_speed_array, volume
     frame_3s_after_stop = int(np.ceil(3/volume_time))
     frame_5s_after_stop = int(np.ceil(5/volume_time))
     frame_10s_after_stop = int(np.ceil(10/volume_time))
+    frame_35s_after_stop = int(np.ceil(35/volume_time))
     
     for current_index in range(len(stop_index_array)):
         restart_points.append(forward_speed_array[stop_index_array[current_index,0]])
@@ -163,6 +172,10 @@ def forwrad_speed_during_stopPeriod(stop_index_array,forward_speed_array, volume
             stop_after_10s.append(forward_speed_array[index_of_stop + frame_10s_after_stop - 1])
         else:
             stop_after_10s.append(np.NaN)
+        if index_of_stop + frame_35s_after_stop - 1 <= stop_index_array[current_index,0]:
+            stop_after_35s.append(forward_speed_array[index_of_stop + frame_35s_after_stop - 1])
+        else:
+            stop_after_35s.append(np.NaN)
     
     
     df_forward_speed_array_stop ['forward_speed_before_stop'] = stop_points
@@ -174,6 +187,7 @@ def forwrad_speed_during_stopPeriod(stop_index_array,forward_speed_array, volume
     df_forward_speed_array_stop ['forward_speed_3s_after_stop'] = stop_after_3s
     df_forward_speed_array_stop ['forward_speed_5s_after_stop'] = stop_after_5s
     df_forward_speed_array_stop ['forward_speed_10s_after_stop'] = stop_after_10s
+    df_forward_speed_array_stop ['forward_speed_35s_after_stop'] = stop_after_35s
     
     return df_forward_speed_array_stop 
 
@@ -195,6 +209,7 @@ def bump_amplitude_during_stopPeriod(stop_index_array,bump_amplitude_array, volu
     stop_after_3s = []
     stop_after_5s = []
     stop_after_10s = []
+    stop_after_35s = []
     middle_points = []
     frame_100ms_before = int(np.ceil(0.1/volume_time))
     frame_500ms_before = int(np.ceil(0.5/volume_time))
@@ -202,6 +217,7 @@ def bump_amplitude_during_stopPeriod(stop_index_array,bump_amplitude_array, volu
     frame_3s_after_stop = int(np.ceil(3/volume_time))
     frame_5s_after_stop = int(np.ceil(5/volume_time))
     frame_10s_after_stop = int(np.ceil(10/volume_time))
+    frame_35s_after_stop = int(np.ceil(35/volume_time))
     
     for current_index in range(len(stop_index_array)):
         restart_points.append(bump_amplitude_array[stop_index_array[current_index,0]])
@@ -223,6 +239,10 @@ def bump_amplitude_during_stopPeriod(stop_index_array,bump_amplitude_array, volu
             stop_after_10s.append(bump_amplitude_array[index_of_stop + frame_10s_after_stop - 1])
         else:
             stop_after_10s.append(np.NaN)
+        if index_of_stop + frame_35s_after_stop - 1 <= stop_index_array[current_index,0]:
+            stop_after_35s.append(bump_amplitude_array[index_of_stop + frame_35s_after_stop - 1])
+        else:
+            stop_after_35s.append(np.NaN)
     
     
     df_bump_amplitude_array_stop ['bump_amplitude_before_stop'] = stop_points
@@ -234,6 +254,7 @@ def bump_amplitude_during_stopPeriod(stop_index_array,bump_amplitude_array, volu
     df_bump_amplitude_array_stop ['bump_amplitude_3s_after_stop'] = stop_after_3s
     df_bump_amplitude_array_stop ['bump_amplitude_5s_after_stop'] = stop_after_5s
     df_bump_amplitude_array_stop ['bump_amplitude_10s_after_stop'] = stop_after_10s
+    df_bump_amplitude_array_stop ['bump_amplitude_35s_after_stop'] = stop_after_35s
     
     return df_bump_amplitude_array_stop
 
@@ -251,3 +272,57 @@ def calculate_angle_difference_between_two_time_point(pd_start_point, pd_end_poi
             else:
                 angle_difference[current_point] = angle_difference[current_point]  - 360
     return angle_difference
+
+
+
+def stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,bump_amplitude_stopping_bin_size, minimum_frame_length, stopping_array, signal_array):
+    bump_amplitude_stopping_bin_number =int(bump_amplitude_stopping_duration/bump_amplitude_stopping_bin_size)
+    bins_amplitude = []
+    for low in range  (0, int(0+100*bump_amplitude_stopping_bin_size*bump_amplitude_stopping_bin_number),int(100*bump_amplitude_stopping_bin_size)):
+        bins_amplitude.append((low, int(low+bump_amplitude_stopping_bin_size*100)))
+        
+    
+    #Find qualified stopping index (must meet the minimimun length of demand and must have 1s of active period before)
+    persistence_stop_index_and_length_qualified_index = []
+    for current_index in range(len(stopping_array)):
+        start_index = [stopping_array[current_index,0]-stopping_array[current_index,1]+1][0]
+        if start_index * volume_time -1 > 0:            
+            if start_index + minimum_frame_length - 1 <= stopping_array[current_index,0]:
+                persistence_stop_index_and_length_qualified_index.append(current_index)
+    
+    persistence_stop_index_and_length_qualified = np.zeros((len(persistence_stop_index_and_length_qualified_index),2))
+    for current_index in range(len(persistence_stop_index_and_length_qualified_index)):
+        persistence_stop_index_and_length_qualified[current_index,0] = stopping_array[persistence_stop_index_and_length_qualified_index[current_index],0]
+        persistence_stop_index_and_length_qualified[current_index,1] = stopping_array[persistence_stop_index_and_length_qualified_index[current_index],1]
+    persistence_stop_index_and_length_qualified = persistence_stop_index_and_length_qualified.astype(int)    
+    bump_amplitude_stopping_current = np.zeros((len(persistence_stop_index_and_length_qualified),bump_amplitude_stopping_bin_number))
+    
+    
+    
+    #Binning all the qualified stoppinf period 
+    for current_index in range(len(persistence_stop_index_and_length_qualified)):
+        start_index = [persistence_stop_index_and_length_qualified[current_index,0]-persistence_stop_index_and_length_qualified[current_index,1]+1][0]
+        temp_amplitude = 0
+        temp_count = 0
+        bin_index = 0
+        for current_binduration_index in range(int(np.ceil(bump_amplitude_stopping_duration/volume_time))):
+            if current_binduration_index == int(np.ceil(bump_amplitude_stopping_duration/volume_time)) - 1:
+                if current_binduration_index * volume_time * 100 >= bins_amplitude[bin_index][0] and current_binduration_index * volume_time * 100 < bins_amplitude[bin_index][1]:
+                    temp_amplitude = temp_amplitude + signal_array[start_index+current_binduration_index]
+                    temp_count = temp_count + 1
+                    bump_amplitude_stopping_current[current_index, bin_index] = temp_amplitude/temp_count
+                else:
+                    bump_amplitude_stopping_current[current_index, bin_index] = temp_amplitude/temp_count
+                    temp_amplitude = signal_array[start_index+current_binduration_index]
+                    temp_count = 1
+                    bin_index = bin_index + 1
+                    bump_amplitude_stopping_current[current_index, bin_index] = temp_amplitude/temp_count
+            elif current_binduration_index * volume_time * 100 >= bins_amplitude[bin_index][0] and current_binduration_index * volume_time * 100 < bins_amplitude[bin_index][1]:
+                temp_amplitude = temp_amplitude + signal_array[start_index+current_binduration_index]
+                temp_count = temp_count + 1
+            else:
+                bump_amplitude_stopping_current[current_index, bin_index] = temp_amplitude/temp_count
+                temp_amplitude = signal_array[start_index+current_binduration_index]
+                temp_count = 1
+                bin_index = bin_index + 1
+    return bump_amplitude_stopping_current
