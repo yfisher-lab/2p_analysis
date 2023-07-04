@@ -248,14 +248,20 @@ def get_raw_F(ROI_NUMBER, napari_roi, raw_data):
         for ROI_index in range(1, ROI_number + 1):
             mask = napari_roi == ROI_index
             F_array_output[time_point, ROI_index - 1] =current_volume[mask].mean() 
-            
-    fig, axs = plt.subplots(ROI_number, 1, figsize=(13, 12))
-    for i in range(ROI_number):
-        ax = axs[i]
-        ax.plot(F_array_output[:,i])
-    fig.supylabel('F',fontsize=20)
-    plt.xlabel('Frame Number', fontsize=20)
-    plt.show()
+    if ROI_number > 1:        
+        fig, axs = plt.subplots(ROI_number, 1, figsize=(13, 12))
+        for i in range(ROI_number):
+            ax = axs[i]
+            ax.plot(F_array_output[:,i])
+        fig.supylabel('F',fontsize=20)
+        plt.xlabel('Frame Number', fontsize=20)
+        plt.show()
+    else:
+        plt.figure(figsize= (25,7))
+        plt.plot(F_array_output)
+        plt.ylabel('F',fontsize=20)
+        plt.xlabel('Frame Number', fontsize=20)
+        plt.show()
     return F_array_output
 
 
@@ -267,13 +273,21 @@ def get_dff_array(raw_F_array, ROI_num, F_zero_cutoff):
     for F_zero_index in range(ROI_num):
         dF_F_array_output[:,F_zero_index] = (raw_F_array[:,F_zero_index] - F_zero[F_zero_index])/F_zero[F_zero_index]
     
-    fig, axs = plt.subplots(ROI_num, 1, figsize=(13, 12))
-    for i in range(ROI_num):
-        ax = axs[i]
-        ax.plot(dF_F_array_output[:,i])
-    fig.supylabel('dF/F',fontsize=20)
-    plt.xlabel('Frame Number', fontsize=20)
-    plt.show()
+    if ROI_num>1:
+        fig, axs = plt.subplots(ROI_num, 1, figsize=(13, 12))
+        for i in range(ROI_num):
+            ax = axs[i]
+            ax.plot(dF_F_array_output[:,i])
+        fig.supylabel('dF/F',fontsize=20)
+        plt.xlabel('Frame Number', fontsize=20)
+        plt.show()
+    else:
+        plt.figure(figsize= (25,7))
+        plt.plot(dF_F_array_output)
+        plt.ylabel('dF/F',fontsize=20)
+        plt.xlabel('Frame Number', fontsize=20)
+        plt.show()
+        
     return dF_F_array_output
 
 
@@ -284,13 +298,20 @@ def normalizing_dff_array(df_f_input,ROI_num, normalize_cutoff):
     for current_ROI in range(ROI_num):
         dF_F_array_normalized_output[:,current_ROI ] = df_f_input[:,current_ROI ]/dFF_95[current_ROI]
 
-    fig, axs = plt.subplots(ROI_num, 1, figsize=(13, 12))
-    for i in range(ROI_num):
-        ax = axs[i]
-        ax.plot(dF_F_array_normalized_output[:,i])
-    fig.supylabel('dF/F-Normalized',fontsize=20)
-    plt.xlabel('Frame Number', fontsize=20)
-    plt.show()
+    if ROI_num>1:
+        fig, axs = plt.subplots(ROI_num, 1, figsize=(13, 12))
+        for i in range(ROI_num):
+            ax = axs[i]
+            ax.plot(dF_F_array_normalized_output[:,i])
+        fig.supylabel('dF/F-Normalized',fontsize=20)
+        plt.xlabel('Frame Number', fontsize=20)
+        plt.show()
+    else:
+        plt.figure(figsize= (25,7))
+        plt.plot(dF_F_array_normalized_output)
+        plt.ylabel('dF/F-Normalized',fontsize=20)
+        plt.xlabel('Frame Number', fontsize=20)
+        plt.show()
     return dF_F_array_normalized_output
 
 
