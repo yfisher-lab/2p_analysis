@@ -33,7 +33,30 @@ def combine_single_tiff(slice_num, cycle_num, file_dir):
     
     return image_combi, tiff_files_li
 
-
+def combine_single_tiff_ch1(slice_num, cycle_num, file_dir):
+    #Create a list for the directory of every single ome-tiff file of the selected trial
+    import tifftools
+    import os
+    from matplotlib import pyplot as plt
+    tiff_files_li = []
+    for ti in os.listdir(file_dir):
+        if '.ome.tif' and 'Ch1' in ti:
+            tiff_files_li.append(sep.join([file_dir, ti]))
+    tiff_files_li.sort()
+    
+    #Find the size of a single image
+    single_image_x = plt.imread(tiff_files_li[0]).shape[0]
+    single_image_y = plt.imread(tiff_files_li[0]).shape[1]
+    #Create the combined image array with the right size
+    image_combi = np.zeros([cycle_num, slice_num, single_image_x,single_image_y])
+    count = 0
+    for current_cycle in range(cycle_num):
+        for current_slice in range(slice_num):
+            image_combi[current_cycle, current_slice] = plt.imread(tiff_files_li[count])
+            count = count + 1
+    
+    
+    return image_combi, tiff_files_li
 
 def combine_single_tiff_V2(slice_num, cycle_num, file_dir):
     #Create a list for the directory of every single ome-tiff file of the selected trial

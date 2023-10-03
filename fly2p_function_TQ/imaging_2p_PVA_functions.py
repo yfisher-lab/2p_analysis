@@ -1,5 +1,7 @@
 import numpy as np
 import math
+from scipy.optimize import curve_fit
+from sklearn.metrics import r2_score
 
 #1.2023  Tianhao Qiu Fisher Lab
 
@@ -110,6 +112,72 @@ def calcualteBumpAmplitude_V2_green (signal_array):
     return amplitude_array
 
 
+# Another way to calculate bump amplitude by getting the normalized dff at current PVA angle and return the amp at 180 degrees opposite
+def calcualteBumpAmplitude_V3 (signal_array, PVA_array_radian):
+    amplitude_array = np.zeros(len(signal_array))
+    amplitude_array_opposite = np.zeros(len(signal_array))
+    for i in range(len(signal_array)):
+        if 0 <= PVA_array_radian[i] < np.pi/4:
+            amplitude_array[i] = signal_array[i,0]
+            amplitude_array_opposite[i] = signal_array[i,4]
+        elif np.pi/4 <= PVA_array_radian[i] < np.pi/2:
+            amplitude_array[i] = signal_array[i,1]
+            amplitude_array_opposite[i] = signal_array[i,5]
+        elif np.pi/2 <= PVA_array_radian[i] < 3*np.pi/4:
+            amplitude_array[i] = signal_array[i,2]
+            amplitude_array_opposite[i] = signal_array[i,6]
+        elif 3*np.pi/4 <= PVA_array_radian[i] <= np.pi:
+            amplitude_array[i] = signal_array[i,3]
+            amplitude_array_opposite[i] = signal_array[i,7]
+        elif -np.pi <= PVA_array_radian[i] < -3*np.pi/4:
+            amplitude_array[i] = signal_array[i,4]
+            amplitude_array_opposite[i] = signal_array[i,0]
+        elif -3*np.pi/4 <= PVA_array_radian[i] < -np.pi/2:
+            amplitude_array[i] = signal_array[i,5]
+            amplitude_array_opposite[i] = signal_array[i,1]
+        elif -np.pi/2 <= PVA_array_radian[i] < -np.pi/4:
+            amplitude_array[i] = signal_array[i,6]
+            amplitude_array_opposite[i] = signal_array[i,2]
+        else:
+            amplitude_array[i] = signal_array[i,7]
+            amplitude_array_opposite[i] = signal_array[i,3]
+    return amplitude_array, amplitude_array_opposite
+
+
+# Another way to calculate bump amplitude based on PVA, but contrast to V3 it is the same PVA represented ROI during the stoppiing period
+def calcualteBumpAmplitude_V4 (bump_amplitude_V3, signal_array, PVA_array_radian, stopping_array):
+    amplitude_array_V4 = bump_amplitude_V3
+    for current_index in range(len(stopping_array)):
+        start_index = stopping_array[current_index,0]-stopping_array[current_index,1]+1
+        end_index = stopping_array[current_index,0]
+        if 0 <= PVA_array_radian[start_index] < np.pi/4:
+            amplitude_array_V4 [start_index:end_index+1] = signal_array[start_index:end_index+1,0]
+            #amplitude_array_opposite[i] = signal_array[i,4]
+        elif np.pi/4 <= PVA_array_radian[start_index] < np.pi/2:
+            amplitude_array_V4 [start_index:end_index+1] = signal_array[start_index:end_index+1,1]
+            #amplitude_array_opposite[i] = signal_array[i,5]
+        elif np.pi/2 <= PVA_array_radian[start_index] < 3*np.pi/4:
+            amplitude_array_V4 [start_index:end_index+1] = signal_array[start_index:end_index+1,2]
+            #amplitude_array_opposite[i] = signal_array[i,6]
+        elif 3*np.pi/4 <= PVA_array_radian[start_index] <= np.pi:
+            amplitude_array_V4 [start_index:end_index+1] = signal_array[start_index:end_index+1,3]
+            #amplitude_array_opposite[i] = signal_array[i,7]
+        elif -np.pi <= PVA_array_radian[start_index] < -3*np.pi/4:
+            amplitude_array_V4[start_index:end_index+1] = signal_array[start_index:end_index+1,4]
+            #amplitude_array_opposite[i] = signal_array[i,0]
+        elif -3*np.pi/4 <= PVA_array_radian[start_index] < -np.pi/2:
+            amplitude_array_V4[start_index:end_index+1] = signal_array[start_index:end_index+1,5]
+            #amplitude_array_opposite[i] = signal_array[i,1]
+        elif -np.pi/2 <= PVA_array_radian[start_index] < -np.pi/4:
+            amplitude_array_V4[start_index:end_index+1] = signal_array[start_index:end_index+1,6]
+            #amplitude_array_opposite[i] = signal_array[i,2]
+        else:
+            amplitude_array_V4[start_index:end_index+1] = signal_array[start_index:end_index+1,7]
+            #amplitude_array_opposite[i] = signal_array[i,3]
+    return amplitude_array_V4
+
+
+
 #Calculate Bump width as long as it is >= half maximum values (Tuner-evans et al. 2021)
 def calculateBumpWidth_v1 (signal_array, ROI_number):
     width_array = np.zeros(len(signal_array))
@@ -122,3 +190,34 @@ def calculateBumpWidth_v1 (signal_array, ROI_number):
                 count = count + 1
         width_array[i] = count * (360/ROI_number)
     return width_array
+
+
+
+# Fit a von Mises distribution for bump position in radian, using non-linear least square and  trust-region-reflexive optimization
+def von_Mises_fitting_dff_TQ(function, x_data, y_data):
+    parameters_array = np.zeros((y_data.shape[1],3))
+    fitting_value_radian_array = np.zeros(y_data.shape[1])
+    goodnees_of_fit_vm_rsquare = np.zeros(y_data.shape[1])
+    for i in range(y_data.shape[1]):
+        popt,pcov = curve_fit(function, x_data, y_data[:,i] ,method = 'trf',bounds=([0,-np.pi,-100],[10,np.pi,100]))
+        
+        #Assign three paramters to output array
+        parameters_array[i,0] = popt[0]
+        parameters_array[i,1] = popt[1]
+        parameters_array[i,2] = popt[2]
+        
+        
+        #Find and assign a fit value on range -pi to pi
+        x = np.linspace(-np.pi, np.pi, 1000)
+        fitting_value_radian_array[i] = -np.pi+(2*np.pi*np.argmax(function(x,  parameters_array[i,0],parameters_array[i,1],parameters_array[i,2]))/1000)
+        
+        #Find and assign goodness of fit (r-square)
+        
+        #residuals = y_data[:,i] - function(x_data, *popt)
+        #ss_res = np.sum(residuals**2)
+        #ss_tot = np.sum((y_data[:,i]-np.mean(y_data[:,i]))**2)
+        #goodnees_of_fit_vm_rsquare[i] = 1-(ss_res/ss_tot)
+        goodnees_of_fit_vm_rsquare[i] = r2_score(y_data[:,i],  function(x_data, *popt))
+    
+    
+    return parameters_array,  fitting_value_radian_array, goodnees_of_fit_vm_rsquare

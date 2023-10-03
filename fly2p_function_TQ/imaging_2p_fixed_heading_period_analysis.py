@@ -275,38 +275,70 @@ def calculate_angle_difference_between_two_time_point(pd_start_point, pd_end_poi
 
 
 
-def stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,bump_amplitude_stopping_bin_size, minimum_frame_length, stopping_array, signal_array):
-    bump_amplitude_stopping_bin_number =int(bump_amplitude_stopping_duration/bump_amplitude_stopping_bin_size)
+def find_qualified_stopping_period (volume_time,stopping_array,PVAinAngle,minimum_frame_length,stable_PVA_threshold):
+    #Find qualified stopping index (must meet the minimimun length of demand and must have 1s of active period before)
+    persistence_stop_index_and_length_qualified_index = []
+    #Only considering PVA stable if 10s later the PVA is still threshold degree within compared to PVA at stop (1 for stable, 0 for not stable)
+    for current_index in range(len(stopping_array)):
+        start_index = stopping_array[current_index,0]-stopping_array[current_index,1]+1
+        #At least 1s after the trial starts
+        if start_index * volume_time -1 > 0:
+            #Stopping_period must above minimum set duration
+            if start_index + minimum_frame_length - 1 <= stopping_array[current_index,0]:
+                # At least 1s of active period before the stopping period 
+                if current_index == 0:
+                    persistence_stop_index_and_length_qualified_index.append(current_index)
+                elif (start_index-[stopping_array[current_index-1,0]])*volume_time>1:
+                    persistence_stop_index_and_length_qualified_index.append(current_index)
+                        
+    
+    persistence_stop_index_and_length_qualified = np.zeros((len(persistence_stop_index_and_length_qualified_index),2))
+    
+    for current_index in range(len(persistence_stop_index_and_length_qualified_index)):
+        persistence_stop_index_and_length_qualified[current_index,0] = stopping_array[persistence_stop_index_and_length_qualified_index[current_index],0]
+        persistence_stop_index_and_length_qualified[current_index,1] = stopping_array[persistence_stop_index_and_length_qualified_index[current_index],1]
+    persistence_stop_index_and_length_qualified = persistence_stop_index_and_length_qualified.astype(int) 
+    
+    
+    stable_PVA_index = np.zeros(len(persistence_stop_index_and_length_qualified))
+    
+    for current_index in range(len(persistence_stop_index_and_length_qualified)):
+        #Get PVA angle ar stop
+        current_stop_PVA = PVAinAngle[persistence_stop_index_and_length_qualified[current_index,0]-persistence_stop_index_and_length_qualified[current_index,1]+1]
+        current_difference_during_stop= PVAinAngle[persistence_stop_index_and_length_qualified[current_index,0]] - current_stop_PVA
+        if np.abs(current_difference_during_stop) > 180:
+            if current_difference_during_stop < 0:
+                current_difference_during_stop =  current_difference_during_stop + 360
+            else:
+                current_difference_during_stop =  current_difference_during_stop - 360
+        
+        if np.abs(current_difference_during_stop) <= stable_PVA_threshold:
+            stable_PVA_index[current_index] = 1
+        else:
+            stable_PVA_index[current_index] = 0
+    
+    
+    return persistence_stop_index_and_length_qualified,stable_PVA_index
+    
+
+def stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,bump_amplitude_stopping_bin_size, signal_array,qualified_stop_array,active_period_before_len):
+    #Count the fact that adding 1s of active period before each stopping period
+    bump_amplitude_stopping_bin_number =int((bump_amplitude_stopping_duration+active_period_before_len)/bump_amplitude_stopping_bin_size)
     bins_amplitude = []
     for low in range  (0, int(0+100*bump_amplitude_stopping_bin_size*bump_amplitude_stopping_bin_number),int(100*bump_amplitude_stopping_bin_size)):
         bins_amplitude.append((low, int(low+bump_amplitude_stopping_bin_size*100)))
         
-    
-    #Find qualified stopping index (must meet the minimimun length of demand and must have 1s of active period before)
-    persistence_stop_index_and_length_qualified_index = []
-    for current_index in range(len(stopping_array)):
-        start_index = [stopping_array[current_index,0]-stopping_array[current_index,1]+1][0]
-        if start_index * volume_time -1 > 0:            
-            if start_index + minimum_frame_length - 1 <= stopping_array[current_index,0]:
-                persistence_stop_index_and_length_qualified_index.append(current_index)
-    
-    persistence_stop_index_and_length_qualified = np.zeros((len(persistence_stop_index_and_length_qualified_index),2))
-    for current_index in range(len(persistence_stop_index_and_length_qualified_index)):
-        persistence_stop_index_and_length_qualified[current_index,0] = stopping_array[persistence_stop_index_and_length_qualified_index[current_index],0]
-        persistence_stop_index_and_length_qualified[current_index,1] = stopping_array[persistence_stop_index_and_length_qualified_index[current_index],1]
-    persistence_stop_index_and_length_qualified = persistence_stop_index_and_length_qualified.astype(int)    
-    bump_amplitude_stopping_current = np.zeros((len(persistence_stop_index_and_length_qualified),bump_amplitude_stopping_bin_number))
+    bump_amplitude_stopping_current = np.zeros((len(qualified_stop_array),bump_amplitude_stopping_bin_number))
     
     
-    
-    #Binning all the qualified stoppinf period 
-    for current_index in range(len(persistence_stop_index_and_length_qualified)):
-        start_index = [persistence_stop_index_and_length_qualified[current_index,0]-persistence_stop_index_and_length_qualified[current_index,1]+1][0]
+    #Binning all the qualified stopping period 
+    for current_index in range(len(qualified_stop_array)):
+        start_index = int([qualified_stop_array[current_index,0]-qualified_stop_array[current_index,1]+active_period_before_len][0]-np.ceil(1/volume_time))
         temp_amplitude = 0
         temp_count = 0
         bin_index = 0
-        for current_binduration_index in range(int(np.ceil(bump_amplitude_stopping_duration/volume_time))):
-            if current_binduration_index == int(np.ceil(bump_amplitude_stopping_duration/volume_time)) - 1:
+        for current_binduration_index in range(int(np.ceil((bump_amplitude_stopping_duration+active_period_before_len)/volume_time))):
+            if current_binduration_index == int(np.ceil((bump_amplitude_stopping_duration+active_period_before_len)/volume_time)) - 1:
                 if current_binduration_index * volume_time * 100 >= bins_amplitude[bin_index][0] and current_binduration_index * volume_time * 100 < bins_amplitude[bin_index][1]:
                     temp_amplitude = temp_amplitude + signal_array[start_index+current_binduration_index]
                     temp_count = temp_count + 1
