@@ -117,25 +117,25 @@ def calcualteBumpAmplitude_V3 (signal_array, PVA_array_radian):
     amplitude_array = np.zeros(len(signal_array))
     amplitude_array_opposite = np.zeros(len(signal_array))
     for i in range(len(signal_array)):
-        if 0 <= PVA_array_radian[i] < np.pi/4:
+        if 0 <= PVA_array_radian[i] < (np.pi/4.0):
             amplitude_array[i] = signal_array[i,0]
             amplitude_array_opposite[i] = signal_array[i,4]
-        elif np.pi/4 <= PVA_array_radian[i] < np.pi/2:
+        elif (np.pi/4.0) <= PVA_array_radian[i] < (np.pi/2.0):
             amplitude_array[i] = signal_array[i,1]
             amplitude_array_opposite[i] = signal_array[i,5]
-        elif np.pi/2 <= PVA_array_radian[i] < 3*np.pi/4:
+        elif (np.pi/2.0) <= PVA_array_radian[i] < (3*np.pi/4.0):
             amplitude_array[i] = signal_array[i,2]
             amplitude_array_opposite[i] = signal_array[i,6]
-        elif 3*np.pi/4 <= PVA_array_radian[i] <= np.pi:
+        elif (3*np.pi/4) <= PVA_array_radian[i] <= np.pi:
             amplitude_array[i] = signal_array[i,3]
             amplitude_array_opposite[i] = signal_array[i,7]
-        elif -np.pi <= PVA_array_radian[i] < -3*np.pi/4:
+        elif (-np.pi) <= PVA_array_radian[i] < (-3*np.pi/4.0):
             amplitude_array[i] = signal_array[i,4]
             amplitude_array_opposite[i] = signal_array[i,0]
-        elif -3*np.pi/4 <= PVA_array_radian[i] < -np.pi/2:
+        elif (-3*np.pi/4.0) <= PVA_array_radian[i] < -np.pi/2:
             amplitude_array[i] = signal_array[i,5]
             amplitude_array_opposite[i] = signal_array[i,1]
-        elif -np.pi/2 <= PVA_array_radian[i] < -np.pi/4:
+        elif (-np.pi/2.0) <= PVA_array_radian[i] < (-np.pi/4.0):
             amplitude_array[i] = signal_array[i,6]
             amplitude_array_opposite[i] = signal_array[i,2]
         else:
@@ -145,8 +145,8 @@ def calcualteBumpAmplitude_V3 (signal_array, PVA_array_radian):
 
 
 # Another way to calculate bump amplitude based on PVA, but contrast to V3 it is the same PVA represented ROI during the stoppiing period
-def calcualteBumpAmplitude_V4 (bump_amplitude_V3, signal_array, PVA_array_radian, stopping_array):
-    amplitude_array_V4 = bump_amplitude_V3
+def calcualteBumpAmplitude_V4 (bump_amplitude_given, signal_array, PVA_array_radian, stopping_array):
+    amplitude_array_V4 = bump_amplitude_given.copy()
     for current_index in range(len(stopping_array)):
         start_index = stopping_array[current_index,0]-stopping_array[current_index,1]+1
         end_index = stopping_array[current_index,0]

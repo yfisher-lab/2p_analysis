@@ -313,7 +313,36 @@ def get_dff_array(raw_F_array, ROI_num, F_zero_cutoff):
         
     return dF_F_array_output
 
-
+def get_dff_array_running(raw_F_array, ROI_num, averaging_window_s,sampling_rate):
+    dF_F_array_output = np.zeros((len(raw_F_array), ROI_num))
+    averaging_window_frame = int(np.round(sampling_rate*averaging_window_s))
+    F_zero = np.zeros((len(raw_F_array), ROI_num))
+    for ROI_index in range(ROI_num):
+        for frame_index in range(len(raw_F_array)):
+            if frame_index <= averaging_window_frame:
+                F_zero[frame_index, ROI_index] = np.mean(raw_F_array[0:averaging_window_frame+1, ROI_index])
+            else:
+                F_zero[frame_index, ROI_index] = np.mean(raw_F_array[frame_index-averaging_window_frame:frame_index+1, ROI_index])
+    
+    for F_zero_index in range(ROI_num):
+        dF_F_array_output[:,F_zero_index] = (raw_F_array[:,F_zero_index] - F_zero[F_zero_index])/F_zero[F_zero_index]
+    
+    if ROI_num>1:
+        fig, axs = plt.subplots(ROI_num, 1, figsize=(13, 12))
+        for i in range(ROI_num):
+            ax = axs[i]
+            ax.plot(dF_F_array_output[:,i])
+        fig.supylabel('dF/F',fontsize=20)
+        plt.xlabel('Frame Number', fontsize=20)
+        plt.show()
+    else:
+        plt.figure(figsize= (25,7))
+        plt.plot(dF_F_array_output)
+        plt.ylabel('dF/F',fontsize=20)
+        plt.xlabel('Frame Number', fontsize=20)
+        plt.show()
+        
+    return dF_F_array_output
 
 def normalizing_dff_array(df_f_input,ROI_num, normalize_cutoff):
     dF_F_array_normalized_output = np.zeros((len(df_f_input), ROI_num))
