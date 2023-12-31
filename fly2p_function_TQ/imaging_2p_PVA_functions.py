@@ -178,11 +178,13 @@ def calcualteBumpAmplitude_V4 (bump_amplitude_given, signal_array, PVA_array_rad
 
 
 
-#Calculate Bump width as long as it is >= half maximum values (Tuner-evans et al. 2021)
+#Calculate Bump width as long as it is >= 50% of (min+half(max-min)) values (Tuner-evans et al. 2021)
 def calculateBumpWidth_v1 (signal_array, ROI_number):
     width_array = np.zeros(len(signal_array))
     for i in range(len(signal_array)):
-        half_max_signal = np.max(signal_array[i,:])/2
+        max_signal = np.max(signal_array[i,:])
+        min_signal = np.min(signal_array[i,:])
+        half_max_signal = min_signal + (max_signal- min_signal)/2
         # compare dff of each glomeruli to half max
         count = 0
         for j in range (ROI_number):

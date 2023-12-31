@@ -1,5 +1,9 @@
 import numpy as np
 import pandas as pd
+from scipy.stats import f_oneway
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+from scipy.interpolate import UnivariateSpline
+from matplotlib import pyplot as plt
 
 # using the downsampled heading array to find the period when fly stop walking 
 def find_persistence_period(head_array, degree_of_tolerance, shortest_stopFrame):
@@ -77,6 +81,7 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
     stop_after_3s = []
     stop_after_5s = []
     stop_after_10s = []
+    stop_after_20s = []
     stop_after_35s = []
     middle_points = []
     frame_100ms_before = int(np.ceil(0.1/volume_time))
@@ -85,6 +90,7 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
     frame_3s_after_stop = int(np.ceil(3/volume_time))
     frame_5s_after_stop = int(np.ceil(5/volume_time))
     frame_10s_after_stop = int(np.ceil(10/volume_time))
+    frame_20s_after_stop = int(np.ceil(20/volume_time))
     frame_35s_after_stop = int(np.ceil(35/volume_time))
     duration_stop = []
     for current_index in range(len(stop_index_array)):
@@ -108,6 +114,10 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
             stop_after_10s.append(PVA_array[index_of_stop + frame_10s_after_stop - 1])
         else:
             stop_after_10s.append(np.NaN)
+        if index_of_stop + frame_20s_after_stop - 1 <= stop_index_array[current_index,0]:
+            stop_after_20s.append(PVA_array[index_of_stop + frame_20s_after_stop - 1])
+        else:
+            stop_after_20s.append(np.NaN)
         if index_of_stop + frame_35s_after_stop - 1 <= stop_index_array[current_index,0]:
             stop_after_35s.append(PVA_array[index_of_stop + frame_35s_after_stop - 1])
         else:
@@ -123,6 +133,7 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
     df_PVA_stop['PVA_3s_after_stop'] = stop_after_3s
     df_PVA_stop['PVA_5s_after_stop'] = stop_after_5s
     df_PVA_stop['PVA_10s_after_stop'] = stop_after_10s
+    df_PVA_stop['PVA_20s_after_stop'] = stop_after_20s
     df_PVA_stop['PVA_35s_after_stop'] = stop_after_35s
     return df_PVA_stop 
 
@@ -142,6 +153,7 @@ def forwrad_speed_during_stopPeriod(stop_index_array,forward_speed_array, volume
     stop_after_3s = []
     stop_after_5s = []
     stop_after_10s = []
+    stop_after_20s = []
     stop_after_35s = []
     middle_points = []
     frame_100ms_before = int(np.ceil(0.1/volume_time))
@@ -150,6 +162,7 @@ def forwrad_speed_during_stopPeriod(stop_index_array,forward_speed_array, volume
     frame_3s_after_stop = int(np.ceil(3/volume_time))
     frame_5s_after_stop = int(np.ceil(5/volume_time))
     frame_10s_after_stop = int(np.ceil(10/volume_time))
+    frame_20s_after_stop = int(np.ceil(20/volume_time))
     frame_35s_after_stop = int(np.ceil(35/volume_time))
     
     for current_index in range(len(stop_index_array)):
@@ -172,6 +185,10 @@ def forwrad_speed_during_stopPeriod(stop_index_array,forward_speed_array, volume
             stop_after_10s.append(forward_speed_array[index_of_stop + frame_10s_after_stop - 1])
         else:
             stop_after_10s.append(np.NaN)
+        if index_of_stop + frame_20s_after_stop - 1 <= stop_index_array[current_index,0]:
+            stop_after_20s.append(forward_speed_array[index_of_stop + frame_20s_after_stop - 1])
+        else:
+            stop_after_20s.append(np.NaN)
         if index_of_stop + frame_35s_after_stop - 1 <= stop_index_array[current_index,0]:
             stop_after_35s.append(forward_speed_array[index_of_stop + frame_35s_after_stop - 1])
         else:
@@ -187,6 +204,7 @@ def forwrad_speed_during_stopPeriod(stop_index_array,forward_speed_array, volume
     df_forward_speed_array_stop ['forward_speed_3s_after_stop'] = stop_after_3s
     df_forward_speed_array_stop ['forward_speed_5s_after_stop'] = stop_after_5s
     df_forward_speed_array_stop ['forward_speed_10s_after_stop'] = stop_after_10s
+    df_forward_speed_array_stop ['forward_speed_20s_after_stop'] = stop_after_20s
     df_forward_speed_array_stop ['forward_speed_35s_after_stop'] = stop_after_35s
     
     return df_forward_speed_array_stop 
@@ -209,6 +227,7 @@ def bump_amplitude_during_stopPeriod(stop_index_array,bump_amplitude_array, volu
     stop_after_3s = []
     stop_after_5s = []
     stop_after_10s = []
+    stop_after_20s = []
     stop_after_35s = []
     middle_points = []
     frame_100ms_before = int(np.ceil(0.1/volume_time))
@@ -217,6 +236,7 @@ def bump_amplitude_during_stopPeriod(stop_index_array,bump_amplitude_array, volu
     frame_3s_after_stop = int(np.ceil(3/volume_time))
     frame_5s_after_stop = int(np.ceil(5/volume_time))
     frame_10s_after_stop = int(np.ceil(10/volume_time))
+    frame_20s_after_stop = int(np.ceil(20/volume_time))
     frame_35s_after_stop = int(np.ceil(35/volume_time))
     
     for current_index in range(len(stop_index_array)):
@@ -239,6 +259,10 @@ def bump_amplitude_during_stopPeriod(stop_index_array,bump_amplitude_array, volu
             stop_after_10s.append(bump_amplitude_array[index_of_stop + frame_10s_after_stop - 1])
         else:
             stop_after_10s.append(np.NaN)
+        if index_of_stop + frame_20s_after_stop - 1 <= stop_index_array[current_index,0]:
+            stop_after_20s.append(bump_amplitude_array[index_of_stop + frame_20s_after_stop - 1])
+        else:
+            stop_after_20s.append(np.NaN)
         if index_of_stop + frame_35s_after_stop - 1 <= stop_index_array[current_index,0]:
             stop_after_35s.append(bump_amplitude_array[index_of_stop + frame_35s_after_stop - 1])
         else:
@@ -254,13 +278,78 @@ def bump_amplitude_during_stopPeriod(stop_index_array,bump_amplitude_array, volu
     df_bump_amplitude_array_stop ['bump_amplitude_3s_after_stop'] = stop_after_3s
     df_bump_amplitude_array_stop ['bump_amplitude_5s_after_stop'] = stop_after_5s
     df_bump_amplitude_array_stop ['bump_amplitude_10s_after_stop'] = stop_after_10s
+    df_bump_amplitude_array_stop ['bump_amplitude_20s_after_stop'] = stop_after_20s
     df_bump_amplitude_array_stop ['bump_amplitude_35s_after_stop'] = stop_after_35s
     
     return df_bump_amplitude_array_stop
 
 
 
-
+def PVA_strength_during_stopPeriod(stop_index_array,PVA_strength_array, volume_time):
+    #Initiate output dataframe and 
+    df_PVA_strength_stop = pd.DataFrame()
+    stop_points = []
+    restart_points = []
+    restart_points_100ms_before = []
+    restart_points_500ms_before = []
+    restart_points_2s_before = []
+    stop_after_3s = []
+    stop_after_5s = []
+    stop_after_10s = []
+    stop_after_20s = []
+    stop_after_35s = []
+    middle_points = []
+    frame_100ms_before = int(np.ceil(0.1/volume_time))
+    frame_500ms_before = int(np.ceil(0.5/volume_time))
+    frame_2s_before = int(np.ceil(2/volume_time))
+    frame_3s_after_stop = int(np.ceil(3/volume_time))
+    frame_5s_after_stop = int(np.ceil(5/volume_time))
+    frame_10s_after_stop = int(np.ceil(10/volume_time))
+    frame_20s_after_stop = int(np.ceil(20/volume_time))
+    frame_35s_after_stop = int(np.ceil(35/volume_time))
+    duration_stop = []
+    for current_index in range(len(stop_index_array)):
+        duration_stop.append(stop_index_array[current_index,1]*volume_time)
+        restart_points.append(PVA_strength_array[stop_index_array[current_index,0]])
+        stop_points.append(PVA_strength_array[stop_index_array[current_index,0]-stop_index_array[current_index,1]+1])
+        middle_points.append(PVA_strength_array[stop_index_array[current_index,0]-int(np.floor(stop_index_array[current_index,1]/2))])
+        index_of_stop = stop_index_array[current_index,0]-stop_index_array[current_index,1]+1
+        restart_points_100ms_before.append(PVA_strength_array[stop_index_array[current_index,0]-frame_100ms_before])
+        restart_points_500ms_before.append(PVA_strength_array[stop_index_array[current_index,0]-frame_500ms_before+1])
+        restart_points_2s_before.append(PVA_strength_array[stop_index_array[current_index,0]-frame_2s_before+1])
+        if index_of_stop + frame_3s_after_stop - 1 <= stop_index_array[current_index,0]:
+            stop_after_3s.append(PVA_strength_array[index_of_stop + frame_3s_after_stop - 1])
+        else:
+            stop_after_3s.append(np.NaN)
+        if index_of_stop + frame_5s_after_stop - 1 <= stop_index_array[current_index,0]:
+            stop_after_5s.append(PVA_strength_array[index_of_stop + frame_5s_after_stop - 1])
+        else:
+            stop_after_5s.append(np.NaN)
+        if index_of_stop + frame_10s_after_stop - 1 <= stop_index_array[current_index,0]:
+            stop_after_10s.append(PVA_strength_array[index_of_stop + frame_10s_after_stop - 1])
+        else:
+            stop_after_10s.append(np.NaN)
+        if index_of_stop + frame_20s_after_stop - 1 <= stop_index_array[current_index,0]:
+            stop_after_20s.append(PVA_strength_array[index_of_stop + frame_20s_after_stop - 1])
+        else:
+            stop_after_20s.append(np.NaN)
+        if index_of_stop + frame_35s_after_stop - 1 <= stop_index_array[current_index,0]:
+            stop_after_35s.append(PVA_strength_array[index_of_stop + frame_35s_after_stop - 1])
+        else:
+            stop_after_35s.append(np.NaN)
+    
+    df_PVA_strength_stop['PVA_strength_before_stop'] = stop_points
+    df_PVA_strength_stop['PVA_strength_at_restart'] = restart_points
+    df_PVA_strength_stop['PVA_strength_100ms_before_restart'] = restart_points_100ms_before
+    df_PVA_strength_stop['PVA_strength_500ms_before_restart'] = restart_points_500ms_before
+    df_PVA_strength_stop['PVA_strength_in_middle'] = middle_points
+    df_PVA_strength_stop['PVA_strength_2s_before_restart'] = restart_points_2s_before
+    df_PVA_strength_stop['PVA_strength_3s_after_stop'] = stop_after_3s
+    df_PVA_strength_stop['PVA_strength_5s_after_stop'] = stop_after_5s
+    df_PVA_strength_stop['PVA_strength_10s_after_stop'] = stop_after_10s
+    df_PVA_strength_stop['PVA_strength_20s_after_stop'] = stop_after_20s
+    df_PVA_strength_stop['PVA_strength_35s_after_stop'] = stop_after_35s
+    return df_PVA_strength_stop
 
 def calculate_angle_difference_between_two_time_point(pd_start_point, pd_end_point):
     angle_difference = np.zeros(len(pd_start_point))
@@ -358,3 +447,100 @@ def stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,b
                 temp_count = 1
                 bin_index = bin_index + 1
     return bump_amplitude_stopping_current
+
+
+
+def plot_stopping_period_signal(signal_df, stopping_bin_size_s,decay_start_from_exact_stop,decay_length_s,active_period_length_s,run_spline_fit,celltype, trial_condition):
+    
+    sample_per_second = int(1/stopping_bin_size_s)
+    actual_stop_start_index = 0 + active_period_length_s*sample_per_second
+    end_of_decay_index = actual_stop_start_index+ decay_length_s*sample_per_second-1    
+    if decay_start_from_exact_stop == 1:
+        average_signal = round((signal_df.mean(axis=1)[actual_stop_start_index]-signal_df.mean(axis=1)[end_of_decay_index])/signal_df.mean(axis=1)[0]*100,2)
+    else:
+        average_signal = round((signal_df.mean(axis=1)[0]-signal_df.mean(axis=1)[end_of_decay_index])/signal_df.mean(axis=1)[0]*100,2)
+    
+ 
+    time_array_decay = np.arange(len(signal_df.mean(axis=1)))/sample_per_second
+    
+    
+    
+    plt.figure(figsize=(15,8))
+    for i in range(len(signal_df.columns)):
+        plt.plot(time_array_decay,signal_df[i],linewidth = 0.7)
+    plt.plot(time_array_decay,signal_df.mean(axis=1), linewidth=8, color = 'navy')
+    
+    if run_spline_fit == True:
+        spl = UnivariateSpline(time_array_decay,signal_df.mean(axis=1),k=2, s=3)
+        plt.plot(time_array_decay,spl(time_array_decay),linewidth=2, color ='red')
+        cutpoint =np.absolute(np.gradient(spl(time_array_decay))-0).argmin()
+        plt.axvline(x= cutpoint*0.2 , color = 'b',linestyle ='--')
+        mean = signal_df.mean(axis=1)
+        tau = np.around(np.absolute(mean[0:cutpoint]-mean[0]*0.632).argmin()*0.2, decimals=2)
+        stable_mean = np.around(np.mean(mean[cutpoint:]),decimals=2)
+        plt.title(f"Bump amplitude over {decay_length_s}s of stop {celltype, trial_condition}, \n Average decay by {average_signal}%, decay period tau = {tau}s, stable period avaerage = {stable_mean} ",fontsize =20)
+    else:
+        plt.title(f"Bump amplitude over {decay_length_s}s of stop {celltype, trial_condition}, \n Average decay by {average_signal}%",fontsize =20)
+        
+    
+    plt.xticks(ticks=plt.xticks()[0][0:], labels=np.array(plt.xticks()[0][0:]-active_period_length_s, dtype=np.int64), fontsize=15)
+    plt.yticks(fontsize=15)
+    plt.xlim(0,decay_length_s+0.8)
+    plt.axvline(x= active_period_length_s, color = 'r',linestyle ='--')
+    plt.xlabel('Time(s)', fontsize=20)
+    plt.ylabel('Bump Amplitude', fontsize=20)
+    plt.show()
+
+
+    
+    
+#Get average signal decay from each single fly   
+def calculate_stop_signal_in_separate_fly(df_bump_decay_all_trial,flylist,trial_list,stability_list, separate_stableY_N):
+    mean_signal_pooled = pd.DataFrame()
+    count = 0
+    for fly_index in range(len(flylist)):
+        same_fly_trial_index = np.where(np.array(trial_list) == flylist[fly_index])[0]
+        if  separate_stableY_N == 1:
+            same_fly_trial_index = [idx for idx in same_fly_trial_index if stability_list[idx]==1]
+        if (len(same_fly_trial_index)) > 0:
+            current_fly_df = df_bump_decay_all_trial.iloc[:,same_fly_trial_index] 
+            if count == 0:
+                mean_signal_pooled = current_fly_df.mean(axis=1)
+            else:
+                mean_signal_current = current_fly_df.mean(axis=1)
+                mean_signal_pooled = pd.concat([mean_signal_pooled,mean_signal_current], axis=1)
+            count = count + 1
+    mean_signal_pooled.columns = range(len(mean_signal_pooled.columns))
+    return mean_signal_pooled
+
+
+def run_ANOVA_for_comparing_across_genotypes(dataframe_input, subcolumn):
+    df_input = dataframe_input[subcolumn]
+    columns_to_test = df_input.columns
+    all_values = [df_input [column].dropna().values for column in df_input]
+    anova_result = f_oneway(*all_values)
+
+
+    # Calculate the adjusted degrees of freedom
+    df_between = len(columns_to_test) - 1
+    df_within = len(np.concatenate(all_values)) - len(columns_to_test)
+
+
+
+    # Print the ANOVA result
+    print("One-way ANOVA Result:")
+    print("F-statistic:", anova_result.statistic)
+    print("p-value:", anova_result.pvalue)
+    print("Adjusted df between:", df_between)
+    print("Adjusted df within:", df_within)
+    
+    
+    if anova_result.pvalue < 0.05:
+        # Create a list of labels corresponding to each group
+        group_labels = np.concatenate([[column] * len(values) for column, values in zip(columns_to_test, all_values)])
+        # Perform Tukey-Kramer post hoc test
+        tukey_results = pairwise_tukeyhsd(np.concatenate(all_values), group_labels)
+
+        # Print the results
+        print(tukey_results)
+    
