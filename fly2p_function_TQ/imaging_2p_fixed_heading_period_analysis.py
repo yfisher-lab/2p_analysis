@@ -83,6 +83,7 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
     stop_after_10s = []
     stop_after_20s = []
     stop_after_35s = []
+    stop_after_60s = []
     middle_points = []
     frame_100ms_before = int(np.ceil(0.1/volume_time))
     frame_500ms_before = int(np.ceil(0.5/volume_time))
@@ -92,6 +93,7 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
     frame_10s_after_stop = int(np.ceil(10/volume_time))
     frame_20s_after_stop = int(np.ceil(20/volume_time))
     frame_35s_after_stop = int(np.ceil(35/volume_time))
+    frame_60s_after_stop = int(np.ceil(60/volume_time))
     duration_stop = []
     for current_index in range(len(stop_index_array)):
         duration_stop.append(stop_index_array[current_index,1]*volume_time)
@@ -122,6 +124,10 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
             stop_after_35s.append(PVA_array[index_of_stop + frame_35s_after_stop - 1])
         else:
             stop_after_35s.append(np.NaN)
+        if index_of_stop + frame_60s_after_stop - 1 <= stop_index_array[current_index,0]:
+            stop_after_60s.append(PVA_array[index_of_stop + frame_60s_after_stop - 1])
+        else:
+            stop_after_60s.append(np.NaN)
     
     df_PVA_stop['Period_duration'] = duration_stop
     df_PVA_stop['PVA_before_stop'] = stop_points
@@ -135,6 +141,7 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
     df_PVA_stop['PVA_10s_after_stop'] = stop_after_10s
     df_PVA_stop['PVA_20s_after_stop'] = stop_after_20s
     df_PVA_stop['PVA_35s_after_stop'] = stop_after_35s
+    df_PVA_stop['PVA_60s_after_stop'] = stop_after_60s
     return df_PVA_stop 
 
 
