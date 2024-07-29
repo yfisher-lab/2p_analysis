@@ -21,15 +21,15 @@ def offset_calculation (array_behavior, array_imaging, IfRadian):
     if IfRadian == True:
         for current_frame in range(len(offset_array)):
             if offset_array[current_frame] <= -np.pi:
-                offset_array[current_frame] = np.pi * 2 + offset_array[current_frame]
-            if offset_array[current_frame] >=  np.pi:
-                offset_array[current_frame] = np.pi * 2 - offset_array[current_frame]
+                offset_array[current_frame] += 2 * np.pi
+            if offset_array[current_frame] >= np.pi:
+                offset_array[current_frame] -= 2 * np.pi
     else:
         for current_frame in range(len(offset_array)):
             if offset_array[current_frame] <= -180:
-                offset_array[current_frame] = -(360 + offset_array[current_frame])
+                offset_array[current_frame] += 360
             if offset_array[current_frame] >=  180:
-                offset_array[current_frame] = 360 - offset_array[current_frame]
+                offset_array[current_frame] -= 360
         
     return  offset_array
 

@@ -13,6 +13,12 @@ from sklearn.metrics import r2_score
 
 
 
+def pol2cart(rho, phi):
+    x = rho * np.cos(phi)
+    y = rho * np.sin(phi)
+    return x, y
+
+
 #Calculate PVA
 def PVA_radian_calcul (dff_array, frame_number, ROI_NUM):
     #Assign an angle-array for 8 ROIs ROI1(1R/1L)is0,  ROI2(2R/8L) is 45
@@ -20,11 +26,7 @@ def PVA_radian_calcul (dff_array, frame_number, ROI_NUM):
         angle_array_roi_8 = [np.pi/8,np.pi*3/8,np.pi*5/8,np.pi*7/8,-np.pi*7/8,-np.pi*5/8,-np.pi*3/8,-np.pi/8]
     elif ROI_NUM == 16:
         angle_array_roi_8 = [np.pi/16,np.pi*3/16,np.pi*5/16,np.pi*7/16,np.pi*9/16,np.pi*11/16,np.pi*13/16,np.pi*15/16,-np.pi*15/16,-np.pi*13/16,-np.pi*11/16,-np.pi*9/16,-np.pi*7/16,-np.pi*5/16,-np.pi*3/16,-np.pi/16]
-    #Define a polar 2 cartesian function 
-    def pol2cart(rho, phi):
-        x = rho * np.cos(phi)
-        y = rho * np.sin(phi)
-        return x, y
+  
     #Initialize PVA_array 
     PVA_radianArray = np.zeros(frame_number)
     PVAStrength = np.zeros(frame_number)
@@ -223,3 +225,21 @@ def von_Mises_fitting_dff_TQ(function, x_data, y_data):
     
     
     return parameters_array,  fitting_value_radian_array, goodnees_of_fit_vm_rsquare
+
+
+
+def strong_PVA_duration(PVA_strength_array, strength_threshold,time_per_frame,minimum_window_s):
+    chunk_array = []
+    count = 0
+    for i in range(len(PVA_strength_array)):
+        if PVA_strength_array[i] >= strength_threshold:
+            count = count + 1
+        else:
+            current_chunk_time = count*time_per_frame
+            if current_chunk_time >= minimum_window_s:
+                chunk_array.append(current_chunk_time)
+                count = 0
+    
+    return chunk_array
+            
+        
