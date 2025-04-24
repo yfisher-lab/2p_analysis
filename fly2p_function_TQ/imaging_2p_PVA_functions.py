@@ -2,6 +2,9 @@ import numpy as np
 import math
 from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score
+from matplotlib import pyplot as plt
+from scipy.stats import circmean
+from scipy.stats import circvar
 
 #1.2023  Tianhao Qiu Fisher Lab
 
@@ -238,8 +241,398 @@ def strong_PVA_duration(PVA_strength_array, strength_threshold,time_per_frame,mi
             current_chunk_time = count*time_per_frame
             if current_chunk_time >= minimum_window_s:
                 chunk_array.append(current_chunk_time)
-                count = 0
+            count = 0
+    
+    # Handle the case where the last chunk reaches the end of the array
+    if count > 0:
+        current_chunk_time = count * time_per_frame
+        if current_chunk_time >= minimum_window_s:
+            chunk_array.append(current_chunk_time)
     
     return chunk_array
+
+
+def strong_PVA_index(PVA_strength_array, strength_threshold,time_per_frame,minimum_window_s):
+    index_array = []
+    count = 0
+    for i in range(len(PVA_strength_array)):
+        if PVA_strength_array[i] >= strength_threshold:
+            count = count + 1
+        else:
+            current_chunk_time = count*time_per_frame
+            if current_chunk_time >= minimum_window_s:
+                index_array.extend(range(i - count, i))
+            count = 0
             
+    # Handle the case where the last chunk reaches the end of the array
+    if count > 0:
+        current_chunk_time = count * time_per_frame
+        if current_chunk_time >= minimum_window_s:
+            index_array.extend(range(len(PVA_strength_array) - count, len(PVA_strength_array)))
+
+    return index_array
+
+
+def strong_signal_index(signal_array, strength_threshold,time_per_frame,minimum_window_s):
+    index_array = []
+    count = 0
+    for i in range(len(signal_array)):
+        if signal_array[i] >= strength_threshold:
+            count = count + 1
+        else:
+            current_chunk_time = count*time_per_frame
+            if current_chunk_time >= minimum_window_s:
+                index_array.extend(range(i - count, i))
+            count = 0
+            
+    # Handle the case where the last chunk reaches the end of the array
+    if count > 0:
+        current_chunk_time = count * time_per_frame
+        if current_chunk_time >= minimum_window_s:
+            index_array.extend(range(len(signal_array) - count, len(signal_array)))
+
+    return index_array
+
+
+def weak_signal_index(signal_array, strength_threshold,time_per_frame,minimum_window_s):
+    index_array = []
+    count = 0
+    for i in range(len(signal_array)):
+        if signal_array[i] <= strength_threshold:
+            count = count + 1
+        else:
+            current_chunk_time = count*time_per_frame
+            if current_chunk_time >= minimum_window_s:
+                index_array.extend(range(i - count, i))
+            count = 0
+            
+    # Handle the case where the last chunk reaches the end of the array
+    if count > 0:
+        current_chunk_time = count * time_per_frame
+        if current_chunk_time >= minimum_window_s:
+            index_array.extend(range(len(signal_array) - count, len(signal_array)))
+
+    return index_array
+
+
+
+def get_behavior_state_of_strong_PVA(strong_PVA_index_array,behavior_state_index_array):
+    state_array = np.zeros(len(strong_PVA_index_array))
+    for i in range(len(state_array)):
+        if behavior_state_index_array[strong_PVA_index_array[i]] == 0:
+            state_array[i] = 0
+        else:
+            state_array[i] = 1
+    return state_array
+
+
+
+def get_bump_shape_at_strong_signal(Bump_shape_array,signal_index_array,ROI_number):
+    if ROI_number == 8:
+        bump_shape_at_strong_signal_array =  np.empty((8, 0))
+    else:
+        bump_shape_at_strong_signal_array =  np.empty((16, 0))
+    
+    for i in range(len(signal_index_array)):
+        current_index = signal_index_array[i]
+        bump_shape_at_strong_signal_array =  np.hstack((bump_shape_at_strong_signal_array ,Bump_shape_array[:,current_index].reshape(-1, 1)))
         
+    average_bump_shape_at_strong_signal_array = np.mean(bump_shape_at_strong_signal_array,axis = 1)    
+    
+    
+    return average_bump_shape_at_strong_signal_array
+
+
+
+def get_PVA_at_strong_signal(PVA_array,signal_index_array):
+    PVA_at_strong_signal_array = np.zeros(len(signal_index_array))
+    for i in range(len(signal_index_array)):
+        current_index = signal_index_array[i]
+        PVA_at_strong_signal_array[i] = PVA_array[signal_index_array[i]]
+    
+    
+    return PVA_at_strong_signal_array
+
+
+
+
+
+
+def plot_bump_shape_comparison(df1, df2,label2, label1="Bump right at stop", color1='dodgerblue', color2='darkorange'):
+    """
+    Function to plot the mean and SEM for two datasets with a shaded region representing SEM.
+
+    Args:
+        df1 (array-like): First dataset (2D: trials x timepoints).
+        df2 (array-like): Second dataset (2D: trials x timepoints).
+        label1 (str): Label for the first dataset in the legend.
+        label2 (str): Label for the second dataset in the legend.
+        color1 (str): Color for the first dataset.
+        color2 (str): Color for the second dataset.
+    """
+
+    # Calculate the mean and SEM for the first dataset (df1)
+    mean_df1 = np.nanmean(df1, axis=1)
+    sem_df1 = np.nanstd(df1, axis=1) / np.sqrt(df1.shape[1])
+
+    # Calculate the mean and SEM for the second dataset (df2)
+    mean_df2 = np.nanmean(df2, axis=1)
+    sem_df2 = np.nanstd(df2, axis=1) / np.sqrt(df2.shape[1])
+
+    # Create the figure
+    plt.figure(figsize=(10, 6))
+
+    # Plot the first dataset
+    plt.plot(range(1, len(mean_df1) + 1), mean_df1, color=color1, linewidth=3, label=f'{label1} (Mean)')
+    plt.fill_between(range(1, len(mean_df1) + 1), mean_df1 - sem_df1, mean_df1 + sem_df1, color=color1, alpha=0.3)
+
+    # Plot the second dataset
+    plt.plot(range(1, len(mean_df2) + 1), mean_df2, color=color2, linewidth=3, label=f'{label2} (Mean)')
+    plt.fill_between(range(1, len(mean_df2) + 1), mean_df2 - sem_df2, mean_df2 + sem_df2, color=color2, alpha=0.3)
+
+    # Add title, labels, and enhance ticks
+    plt.title("Bump Shape Comparison", fontsize=18, fontweight='bold', color='darkblue')
+    plt.xlabel("Glomerulus Index", fontsize=14)
+    plt.ylabel("Normalized dF/F", fontsize=14)
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
+
+    # Add a legend for only the mean
+    plt.legend(fontsize=12)
+
+    # Show the plot
+    plt.show()
+    
+    
+def plot_strong_signal_frame_pva_histogram(data_all, selected_animal=None):
+    # Define colors dynamically
+    num_animals = len(data_all['PVA_at_strong_signal'])
+    color_list = [plt.cm.viridis(i / num_animals) for i in range(num_animals)]  # Generates distinct colors
+
+    # Define bins
+    bins = np.linspace(-180, 180, 30)  # 20 bins from -180 to 180 degrees
+
+    # Plot histograms in requested style
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    for (animal, data), color in zip(data_all['PVA_at_strong_signal'].items(), color_list):
+        # If selected_animal is specified, skip other animals
+        if selected_animal and animal != selected_animal:
+            continue
+
+        # Convert to a flat NumPy array (handles lists of lists)
+        flat_data = np.concatenate([np.asarray(d, dtype=float).flatten() for d in data])
+
+        # Compute histogram
+        hist, bin_edges = np.histogram(flat_data, bins=bins, density=True)
+        hist =hist/hist.sum()
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2  # Get bin centers
+
+        # Plot filled histogram
+        ax.fill_between(bin_centers, hist, alpha=0.4, color=color, label=f"{animal}")
+
+    # Formatting
+    ax.set_xlim(-180, 180)  # Adjusted for degree scale
+    ax.set_ylim(0, None)  # Auto adjust y-limit
+    ax.set_xticks([-180, -90, 0, 90, 180])
+    ax.set_xticklabels([r'$-180$', r'$-90$', '0', r'$90$', r'$180$'])
+    ax.set_xlabel("PVA Position")
+    ax.set_ylabel("Proportion")
+    ax.legend()
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.set_title("Distribution of  PVA at strong signal frame (Per Animal)", fontsize=16)
+
+    # Show plot
+    plt.show()
+
+    
+
+
+
+
+
+def plot_circular_variance_distribution_at_turning_slide_window(data_groups, group_names=None, bins=30):
+    """
+    Plots the circular variance distribution for up to two groups using completely separate calculations.
+
+    Parameters:
+    - data_groups (list of lists or np.ndarray): List of 1 or 2 datasets to be plotted.
+    - group_names (list of str, optional): Names corresponding to each dataset.
+    - bins (int): Number of bins for the histogram.
+    """
+
+    # Ensure only 1 or 2 groups are provided
+    if len(data_groups) not in [1, 2]:
+        raise ValueError("This function only supports 1 or 2 groups.")
+
+    # Default group names if not provided
+    if group_names is None:
+        group_names = [f"Group {i+1}" for i in range(len(data_groups))]
+
+    # Define bins (from 0 to 1)
+    bin_edges = np.linspace(0, 1, bins + 1)
+
+    # Define color map for groups
+    colors = ['dodgerblue', 'darkorange'][:len(data_groups)]  # Blue for 1st group, Orange for 2nd
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Process each group **completely separately**
+    if len(data_groups) == 1:
+        # Process **only one group**
+        data_1 = np.concatenate([np.asarray(d, dtype=float).flatten() for d in data_groups[0]])
+        hist_1, _ = np.histogram(data_1, bins=bin_edges)  # Compute histogram separately
+        hist_1 = hist_1 / hist_1.sum() if hist_1.sum() > 0 else hist_1  # Normalize separately
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2  # Bin centers
+
+        # Plot histogram
+        ax.fill_between(bin_centers, hist_1, alpha=0.4, color=colors[0], label=group_names[0])
+        
+        # Compute mean
+        mean_1 = np.mean(data_1)
+        ax.axvline(mean_1, color=colors[0], linestyle='dashed', linewidth=2, label=f'{group_names[0]} Mean: {mean_1:.2f}')
+
+        # Set y-limits
+        max_y = max(hist_1) * 1.1 
+        ax.set_ylim(0, max_y)
+
+    elif len(data_groups) == 2:
+        # Process **two groups separately**
+        data_1 = np.concatenate([np.asarray(d, dtype=float).flatten() for d in data_groups[0]])
+        data_2 = np.concatenate([np.asarray(d, dtype=float).flatten() for d in data_groups[1]])
+
+        # Compute histograms separately
+        hist_1, _ = np.histogram(data_1, bins=bin_edges)
+        hist_2, _ = np.histogram(data_2, bins=bin_edges)
+
+        # Normalize each histogram separately
+        hist_1 = hist_1 / hist_1.sum() 
+        hist_2 = hist_2 / hist_2.sum() 
+
+        # Compute bin centers
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2  
+
+        # Plot histograms separately
+        ax.fill_between(bin_centers, hist_1, alpha=0.4, color=colors[0], label=group_names[0])
+        ax.fill_between(bin_centers, hist_2, alpha=0.4, color=colors[1], label=group_names[1])
+
+        # Compute means separately
+        mean_1 = np.mean(data_1)
+        mean_2 = np.mean(data_2)
+
+        # Plot means separately
+        ax.axvline(mean_1, color=colors[0], linestyle='dashed', linewidth=2, label=f'{group_names[0]} Mean: {mean_1:.2f}')
+        ax.axvline(mean_2, color=colors[1], linestyle='dashed', linewidth=2, label=f'{group_names[1]} Mean: {mean_2:.2f}')
+
+        # Set y-limits based on max of both histograms
+        max_y = max(max(hist_1), max(hist_2)) * 1.1 
+        ax.set_ylim(0, max_y)
+
+    # Formatting
+    ax.set_xlim(0, 1)  # X-axis from 0 to 1
+    ax.set_xticks(np.linspace(0, 1, 6))  
+    ax.set_xlabel("Circular Variance", fontsize=14)
+    ax.set_ylabel("Proportion", fontsize=14)
+    ax.legend(fontsize=12, loc="upper right")
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.set_title("Circular Variance Distribution During Walking", fontsize=16, fontweight='bold')
+
+    # Show plot
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+
+def align_radian_offset_to_zero(data_dict, key_name='output_PVA_heading_offset'):
+    """
+    Align the circular mean of radian offset data to zero for each key in the dictionary 
+    and combine all the aligned data.
+
+    Parameters:
+        data_dict (dict): A dictionary containing radian offset arrays as values.
+                          The structure should be {key: [array]}.
+        key_name (str): The key in the dictionary containing the radian offset arrays.
+
+    Returns:
+        np.ndarray: A combined array of all aligned radian offset data.
+    """
+    all_aligned_data = []
+
+    # Loop through each key in the dictionary
+    for key, radian_offset_list in data_dict[key_name].items():
+        # Extract the radian offset array
+        radian_offset = radian_offset_list[0]  # Assuming the array is the first item in the list
+        
+        # Align the mean angle to zero
+        mean_angle = circmean(radian_offset, high=np.pi, low=-np.pi)  # Compute circular mean
+        radian_offset_aligned = (radian_offset - mean_angle + np.pi) % (2 * np.pi) - np.pi  # Shift to align mean at zero
+        
+        # Append the aligned data to the combined list
+        all_aligned_data.append(radian_offset_aligned)
+
+    # Concatenate all aligned data into a single array
+    all_aligned_data_combined = np.concatenate(all_aligned_data)
+
+    return all_aligned_data_combined    
+
+
+def plot_aligned_radian_offset_distribution(aligned_radian_offset_1, aligned_radian_offset_2=None, 
+                                            label_1="EPG_shi_cl", label_2="empty_control", 
+                                            color_1="Navy", color_2="grey", bins=30):
+    """
+    Plots the distribution of aligned radian offsets with circular variance.
+    
+    Parameters:
+    - aligned_radian_offset_1: First dataset (required)
+    - aligned_radian_offset_2: Second dataset (optional)
+    - label_1: Label for first dataset
+    - label_2: Label for second dataset (if provided)
+    - color_1: Color for first dataset
+    - color_2: Color for second dataset (if provided)
+    - bins: Number of bins for histogram
+    """
+
+    # Define bins from -π to π
+    bin_edges = np.linspace(-np.pi, np.pi, bins + 1)
+
+    # Compute histogram for first dataset
+    hist_1, _ = np.histogram(aligned_radian_offset_1, bins=bin_edges)
+    hist_1 = hist_1 / hist_1.sum()  # Normalize
+
+    # Compute bin centers
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2  
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot first dataset
+    ax.fill_between(bin_centers, hist_1, alpha=0.4, color=color_1, label=f"{label_1} (Circ. Var: {circvar(aligned_radian_offset_1, high=np.pi, low=-np.pi):.2f})")
+
+    # If second dataset is provided, plot it
+    if aligned_radian_offset_2 is not None:
+        hist_2, _ = np.histogram(aligned_radian_offset_2, bins=bin_edges)
+        hist_2 = hist_2 / hist_2.sum()  # Normalize
+        ax.fill_between(bin_centers, hist_2, alpha=0.4, color=color_2, label=f"{label_2} (Circ. Var: {circvar(aligned_radian_offset_2, high=np.pi, low=-np.pi):.2f})")
+
+    # Formatting
+    ax.set_xlim(-np.pi, np.pi)
+    ax.set_ylim(0, max(hist_1.max(), hist_2.max() if aligned_radian_offset_2 is not None else 0) * 1.1)  # Adjust y-limit
+    ax.set_xticks([-np.pi, -np.pi/2, 0, np.pi/2, np.pi])
+    ax.set_xticklabels([r'$-\pi$', r'$-\pi/2$', '0', r'$\pi/2$', r'$\pi$'])
+    ax.set_xlabel("Radian Offset", fontsize=14)
+    ax.set_ylabel("Proportion", fontsize=14)
+    ax.legend(fontsize=12, loc="upper right")
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.set_title("Comparison of Aligned Radian Offset Distributions", fontsize=16, fontweight='bold')
+
+    # Show plot
+    plt.tight_layout()
+    plt.show()
+
+    

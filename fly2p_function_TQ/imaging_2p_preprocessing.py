@@ -85,6 +85,45 @@ def combine_single_tiff_V2(slice_num, cycle_num, file_dir):
 
 
 
+def combine_single_tiff_V3(cycle_num, file_dir):
+    """
+    Combine multi-slice OME-TIFF files where each file represents one cycle and includes all slices.
+
+    Parameters:
+    - cycle_num: Number of cycles to process.
+    - file_dir: Directory containing OME-TIFF files.
+
+    Returns:
+    - image_combi: 4D numpy array of shape (cycle_num, z_slices, x, y)
+    - tiff_files_li: Sorted list of TIFF file paths used.
+    """
+    import os
+    import tifffile
+    import numpy as np
+
+    tiff_files_li = []
+    for ti in os.listdir(file_dir):
+        if ti.endswith(".ome.tif") and "Ch2" in ti:
+            tiff_files_li.append(os.path.join(file_dir, ti))
+    tiff_files_li.sort()
+
+    if len(tiff_files_li) != cycle_num:
+        raise ValueError(f"Expected {cycle_num} files, but found {len(tiff_files_li)}")
+
+    # Load the first file to get shape info
+    first_stack = tifffile.imread(tiff_files_li[0])  # shape: (z, x, y)
+    z_slices, x_dim, y_dim = first_stack.shape
+    image_combi = np.zeros((cycle_num, z_slices, x_dim, y_dim), dtype=first_stack.dtype)
+
+    # Fill array with each cycle's stack
+    for i in range(cycle_num):
+        image_combi[i] = tifffile.imread(tiff_files_li[i])
+
+    return image_combi, tiff_files_li
+
+
+
+
 
 
 
@@ -290,26 +329,28 @@ def get_raw_F(ROI_NUMBER, napari_roi, raw_data):
 
 
 
-def get_dff_array(raw_F_array, ROI_num, F_zero_cutoff):
+def get_dff_array(raw_F_array, ROI_num, F_zero_cutoff, if_plot):
     dF_F_array_output = np.zeros((len(raw_F_array), ROI_num))
     F_zero = np.quantile(raw_F_array, F_zero_cutoff, axis = 0)
     for F_zero_index in range(ROI_num):
         dF_F_array_output[:,F_zero_index] = (raw_F_array[:,F_zero_index] - F_zero[F_zero_index])/F_zero[F_zero_index]
     
-    if ROI_num>1:
-        fig, axs = plt.subplots(ROI_num, 1, figsize=(13, 12))
-        for i in range(ROI_num):
-            ax = axs[i]
-            ax.plot(dF_F_array_output[:,i])
-        fig.supylabel('dF/F',fontsize=20)
-        plt.xlabel('Frame Number', fontsize=20)
-        plt.show()
-    else:
-        plt.figure(figsize= (25,7))
-        plt.plot(dF_F_array_output)
-        plt.ylabel('dF/F',fontsize=20)
-        plt.xlabel('Frame Number', fontsize=20)
-        plt.show()
+    
+    if if_plot == 1:
+        if ROI_num>1:
+            fig, axs = plt.subplots(ROI_num, 1, figsize=(13, 12))
+            for i in range(ROI_num):
+                ax = axs[i]
+                ax.plot(dF_F_array_output[:,i])
+            fig.supylabel('dF/F',fontsize=20)
+            plt.xlabel('Frame Number', fontsize=20)
+            plt.show()
+        else:
+            plt.figure(figsize= (25,7))
+            plt.plot(dF_F_array_output)
+            plt.ylabel('dF/F',fontsize=20)
+            plt.xlabel('Frame Number', fontsize=20)
+            plt.show()
         
     return dF_F_array_output
 
@@ -344,26 +385,27 @@ def get_dff_array_running(raw_F_array, ROI_num, averaging_window_s,sampling_rate
         
     return dF_F_array_output
 
-def normalizing_dff_array(df_f_input,ROI_num, normalize_cutoff):
+def normalizing_dff_array(df_f_input,ROI_num, normalize_cutoff, if_plot):
     dF_F_array_normalized_output = np.zeros((len(df_f_input), ROI_num))
     dFF_95 = np.quantile(df_f_input, normalize_cutoff, axis = 0)
     for current_ROI in range(ROI_num):
         dF_F_array_normalized_output[:,current_ROI ] = df_f_input[:,current_ROI ]/dFF_95[current_ROI]
-
-    if ROI_num>1:
-        fig, axs = plt.subplots(ROI_num, 1, figsize=(13, 12))
-        for i in range(ROI_num):
-            ax = axs[i]
-            ax.plot(dF_F_array_normalized_output[:,i])
-        fig.supylabel('dF/F-Normalized',fontsize=20)
-        plt.xlabel('Frame Number', fontsize=20)
-        plt.show()
-    else:
-        plt.figure(figsize= (25,7))
-        plt.plot(dF_F_array_normalized_output)
-        plt.ylabel('dF/F-Normalized',fontsize=20)
-        plt.xlabel('Frame Number', fontsize=20)
-        plt.show()
+    
+    if if_plot == 1:
+        if ROI_num>1:
+            fig, axs = plt.subplots(ROI_num, 1, figsize=(13, 12))
+            for i in range(ROI_num):
+                ax = axs[i]
+                ax.plot(dF_F_array_normalized_output[:,i])
+            fig.supylabel('dF/F-Normalized',fontsize=20)
+            plt.xlabel('Frame Number', fontsize=20)
+            plt.show()
+        else:
+            plt.figure(figsize= (25,7))
+            plt.plot(dF_F_array_normalized_output)
+            plt.ylabel('dF/F-Normalized',fontsize=20)
+            plt.xlabel('Frame Number', fontsize=20)
+            plt.show()
     return dF_F_array_normalized_output
 
 

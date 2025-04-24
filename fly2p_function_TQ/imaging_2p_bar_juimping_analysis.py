@@ -7,6 +7,7 @@ import os
 from os.path import sep
 from fly2p_function_TQ.imaging_2p_fictrac_imaging_alignment import moving_wrapped_plot_by_offset,fictrack_signal_decoding,offset_calculation
 from fly2p_function_TQ.imaging_2p_fixed_heading_period_analysis import find_stop_period_on_heading
+from fly2p_function_TQ.imaging_2p_PVA_functions import calcualteBumpAmplitude, calcualteBumpAmplitude_V3
 from scipy.stats import circvar
 from scipy.stats import circmean
 from scipy.ndimage import gaussian_filter1d
@@ -27,10 +28,17 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
     output_pooled_dictionary['circular_mean_before_jump'] = pd.DataFrame()
     output_pooled_dictionary['offset_return_time'] = pd.DataFrame()
     output_pooled_dictionary['Angular_speed'] = pd.DataFrame()
+    output_pooled_dictionary['Angular_speed_entire_trial'] = pd.DataFrame()
+    output_pooled_dictionary['Bump_speed_entire_trial'] = pd.DataFrame()
     output_pooled_dictionary['Forward_speed'] = pd.DataFrame()
     output_pooled_dictionary['output_flytrial'] = []
     output_pooled_dictionary['volume_time'] = []
     output_pooled_dictionary['Angular_speed_during_offset_return'] = pd.DataFrame()
+    #Follow the standard of Ki, et al., 2017
+    output_pooled_dictionary['bump_jump_flow_index'] = pd.DataFrame()
+    output_pooled_dictionary['sec_bump_move'] = []
+    output_pooled_dictionary['delta7_bump_amplitude_at_bump_move'] = []
+    output_pooled_dictionary['Angular_speed_at_bump_move'] = []
 
     
     if dual_imaging == 1:
@@ -40,8 +48,9 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
         output_pooled_dictionary['output_greed_red_PVA_offset'] = pd.DataFrame()
         output_pooled_dictionary['circular_variance_red'] = []
         output_pooled_dictionary['PVA_strength_ratio'] = []
-    
-    
+        output_pooled_dictionary['Angular_speed_entire_trial_red'] = pd.DataFrame()
+        output_pooled_dictionary['EPG_bump_amplitude_at_bump_move'] = []
+        output_pooled_dictionary['EPG_bump_amplitude_before_bar_jump'] = []
     
     
     #Part 2:import data
@@ -74,7 +83,12 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
             Forward_velocity = np.gradient(integrated_x_unwrapped)/volume_time
             Forward_speed_radian = np.abs(Forward_velocity)
             Forward_speed_degrees =Forward_speed_radian * 180/np.pi
+            Angular_velocity_degrees =  Angular_velocity * 180/np.pi
             Angular_speed_degrees =  np.abs(Angular_velocity) * 180/np.pi
+            PVA_unwrapped = fictrack_signal_decoding(PVA_Radian, time_array_imaging, 10, already_radian = True)
+            Bump_speed_degrees =  (np.gradient(PVA_unwrapped)/volume_time) * 180/np.pi
+            dff_normalized_8_roi = np.array([current_file[f'dFF_Roi_{i}'] for i in range(1, 9)]).T
+            Bump_amplitude_V3, Bump_amplitude_V3_opposite = calcualteBumpAmplitude_V3(dff_normalized_8_roi,PVA_Radian)
         
             if dual_imaging == 1:
                 PVA_Angle_red = current_file['PVA_Angle_red'].values
@@ -83,7 +97,9 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
                 PVA_strength_red_z = zscore(PVA_strength_red)
                 PVA_strength_ratio = PVA_strength/PVA_strength_red
                 PVA_strength_ratio_log = np.log(PVA_strength_ratio)
-            
+                dff_normalized_8_roi_red = np.array([current_file[f'dFF_Roi_{i}_red'] for i in range(1, 9)]).T
+                Bump_amplitude_V3_red, Bump_amplitude_V3_opposite_red = calcualteBumpAmplitude_V3(dff_normalized_8_roi_red,PVA_Radian_red)
+              
         
             #Get persistence period
             persistence_stop_index_and_length = find_stop_period_on_heading(head_velocity_array = Angular_velocity,degree_of_tolerance =15,shortest_stopFrame=int(np.ceil(3/volume_time)))
@@ -134,9 +150,16 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
             circular_mean_before_bar_jump = get_circular_mean_before_bar_jump(radian_offset_PVA_Bar, current_jumping_frame, 20,volume_time)
             
             
+            #Get jump/flow/index after the jump (1 for flow,2 for jump)
+            bump_flow_jump_index_current,bump_flow_jump_start_frame, sec_bump_move = get_bump_jump_flow_index_array(current_jumping_frame,volume_time,PVA_Radian)
             
             
+            EPG_bump_amplitude_at_bump_move_current = get_bump_amplitude_at_bump_jump_flow(Bump_amplitude_V3_red ,bump_flow_jump_start_frame)
             
+ 
+            delta7_bump_amplitude_at_bump_move_current = get_bump_amplitude_at_bump_jump_flow(Bump_amplitude_V3 ,bump_flow_jump_start_frame)
+    
+            Angular_speed_at_bump_move_current  = get_bump_amplitude_at_bump_jump_flow(Angular_speed_degrees,bump_flow_jump_start_frame)
             
             
             #Calculate the time that needs for bump to return to its previous offset
@@ -148,7 +171,7 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
             
             
             #Get all the jump-trigged data for further analysis 
-            jump_triggered_behavior_stamp =get_behavior_state_for_jump_triggered_signal(current_jumping_frame,behavior_state_frame_index, volume_time,1)
+            jump_triggered_behavior_stamp =get_behavior_state_for_jump_triggered_signal(current_jumping_frame,behavior_state_frame_index, volume_time,3)
             jump_triggered_PVA = get_data_before_after_bar_jump(current_jumping_frame, PVA_Radian, volume_time,29)
             jump_triggered_Bar_data = get_data_before_after_bar_jump(current_jumping_frame, Wrapped_Bar_jumped, volume_time,29) 
             jump_triggered_Bar_PVA_offset = get_data_before_after_bar_jump(current_jumping_frame, radian_offset_PVA_Bar, volume_time,29) 
@@ -160,7 +183,8 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
                 jump_triggered_PVA_red = get_data_before_after_bar_jump(current_jumping_frame, PVA_Radian_red, volume_time,29)
                 jump_triggered_Bar_PVA_red_offset = get_data_before_after_bar_jump(current_jumping_frame, radian_offset_PVA_red_Bar, volume_time,29)
                 jump_triggered_Bar_PVA_red_green_offset = get_data_before_after_bar_jump(current_jumping_frame, radian_offset_PVA_red_green, volume_time,29)
-                strength_ratio_before_jump = get_PVA_strength_ratio_before_bar_jump (current_jumping_frame,PVA_strength_ratio_log,volume_time,0.5)                
+                strength_ratio_before_jump = get_PVA_strength_ratio_before_bar_jump (current_jumping_frame,PVA_strength_ratio_log,volume_time,0.5) 
+                EPG_bump_amplitude_before_bar_jump_current = get_PVA_strength_ratio_before_bar_jump (current_jumping_frame,Bump_amplitude_V3_red,volume_time,0.5) 
                 Angular_speed_during_offset_return = get_Angular_speed_during_offset_return(current_jumping_frame,Angular_speed_degrees,volume_time,time_for_offset_recover)
         
             
@@ -176,9 +200,15 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
             jump_triggered_Forward_speed_current = pd.DataFrame(jump_triggered_Forward_speed)
             stop_s_before_jump_current = pd.DataFrame(stop_s_before_jump)
             strength_ratio_before_jump_current =pd.DataFrame(strength_ratio_before_jump)
+            sec_bump_move = pd.DataFrame(sec_bump_move)
+            EPG_bump_amplitude_at_bump_move_current =pd.DataFrame(EPG_bump_amplitude_at_bump_move_current)
+            EPG_bump_amplitude_before_bar_jump_current =pd.DataFrame(EPG_bump_amplitude_before_bar_jump_current) 
+            delta7_bump_amplitude_at_bump_move_current =pd.DataFrame(delta7_bump_amplitude_at_bump_move_current)
+            Angular_speed_at_bump_move_current  = pd.DataFrame(Angular_speed_at_bump_move_current)
             circular_mean_before_bar_jump_current = pd.DataFrame(circular_mean_before_bar_jump )
             time_for_offset_recover_current = pd.DataFrame(time_for_offset_recover)
             Angular_speed_during_offset_return_current = pd.DataFrame(Angular_speed_during_offset_return)
+ 
             #Store the data 
             if count == 0:
                 output_pooled_dictionary['output_PVA_radian_pooled'] =  jump_triggered_PVA_current
@@ -190,11 +220,19 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
                 output_pooled_dictionary['circular_mean_before_jump']= circular_mean_before_bar_jump_current
                 output_pooled_dictionary['offset_return_time']  = time_for_offset_recover_current
                 output_pooled_dictionary['Angular_speed_during_offset_return']=Angular_speed_during_offset_return_current
+                output_pooled_dictionary['Angular_speed_entire_trial'] = pd.DataFrame(Angular_velocity_degrees)
+                output_pooled_dictionary['Bump_speed_entire_trial'] = pd.DataFrame(Bump_speed_degrees)
+                output_pooled_dictionary['bump_jump_flow_index'] = pd.DataFrame(bump_flow_jump_index_current)
+                output_pooled_dictionary['sec_bump_move'] = sec_bump_move
+                output_pooled_dictionary['delta7_bump_amplitude_at_bump_move'] = delta7_bump_amplitude_at_bump_move_current
+                output_pooled_dictionary['Angular_speed_at_bump_move'] = Angular_speed_at_bump_move_current
                 if dual_imaging == 1:
                     output_pooled_dictionary['output_PVA_radian_pooled_red'] = jump_triggered_PVA_red_current
                     output_pooled_dictionary['output_bar_PVA_red_offset_pooled'] = jump_triggered_Bar_PVA_red_offset_current
                     output_pooled_dictionary['output_greed_red_PVA_offset'] = jump_triggered_Bar_PVA_red_green_offset_current
                     output_pooled_dictionary['PVA_strength_ratio'] = strength_ratio_before_jump_current
+                    output_pooled_dictionary['EPG_bump_amplitude_at_bump_move'] = EPG_bump_amplitude_at_bump_move_current
+                    output_pooled_dictionary['EPG_bump_amplitude_before_bar_jump'] = EPG_bump_amplitude_before_bar_jump_current
             else:
                 output_pooled_dictionary['output_PVA_radian_pooled'] = pd.concat([ output_pooled_dictionary['output_PVA_radian_pooled'],jump_triggered_PVA_current], ignore_index=True)
                 output_pooled_dictionary['output_bar_PVA_offset_pooled'] = pd.concat([ output_pooled_dictionary['output_bar_PVA_offset_pooled'],jump_triggered_Bar_PVA_offset_current], ignore_index=True)
@@ -205,6 +243,12 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
                 output_pooled_dictionary['circular_mean_before_jump'] = pd.concat([ output_pooled_dictionary['circular_mean_before_jump'],circular_mean_before_bar_jump_current], ignore_index=True, axis =1)
                 output_pooled_dictionary['offset_return_time']  = pd.concat([ output_pooled_dictionary['offset_return_time'],time_for_offset_recover_current], ignore_index=True)
                 output_pooled_dictionary['Angular_speed_during_offset_return']  = pd.concat([ output_pooled_dictionary['Angular_speed_during_offset_return'],Angular_speed_during_offset_return_current], ignore_index=True)
+                output_pooled_dictionary['Angular_speed_entire_trial']  = pd.concat([ output_pooled_dictionary['Angular_speed_entire_trial'],pd.DataFrame(Angular_velocity_degrees)], ignore_index=True)
+                output_pooled_dictionary['Bump_speed_entire_trial']  = pd.concat([ output_pooled_dictionary['Bump_speed_entire_trial'],pd.DataFrame(Bump_speed_degrees)], ignore_index=True)
+                output_pooled_dictionary['bump_jump_flow_index']  = pd.concat([ output_pooled_dictionary['bump_jump_flow_index'],pd.DataFrame(bump_flow_jump_index_current)], ignore_index=True)
+                output_pooled_dictionary['sec_bump_move'] = pd.concat([ output_pooled_dictionary['sec_bump_move'],sec_bump_move], ignore_index=True)
+                output_pooled_dictionary['delta7_bump_amplitude_at_bump_move'] = pd.concat([ output_pooled_dictionary['delta7_bump_amplitude_at_bump_move'],delta7_bump_amplitude_at_bump_move_current], ignore_index=True)
+                output_pooled_dictionary['Angular_speed_at_bump_move'] =pd.concat([ output_pooled_dictionary['Angular_speed_at_bump_move'],Angular_speed_at_bump_move_current], ignore_index=True) 
                                
                 
                 if dual_imaging == 1:
@@ -212,6 +256,8 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
                     output_pooled_dictionary['output_bar_PVA_red_offset_pooled'] = pd.concat([ output_pooled_dictionary['output_bar_PVA_red_offset_pooled'],jump_triggered_Bar_PVA_red_offset_current], ignore_index=True)
                     output_pooled_dictionary['output_greed_red_PVA_offset'] = pd.concat([ output_pooled_dictionary['output_greed_red_PVA_offset'],jump_triggered_Bar_PVA_red_green_offset_current], ignore_index=True)
                     output_pooled_dictionary['PVA_strength_ratio'] = pd.concat([ output_pooled_dictionary['PVA_strength_ratio'],strength_ratio_before_jump_current], ignore_index=True)
+                    output_pooled_dictionary['EPG_bump_amplitude_at_bump_move'] = pd.concat([ output_pooled_dictionary['EPG_bump_amplitude_at_bump_move'],EPG_bump_amplitude_at_bump_move_current], ignore_index=True)
+                    output_pooled_dictionary['EPG_bump_amplitude_before_bar_jump'] = pd.concat([ output_pooled_dictionary['EPG_bump_amplitude_before_bar_jump'],EPG_bump_amplitude_before_bar_jump_current], ignore_index=True)
             
             
             
@@ -224,7 +270,22 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
 
         
 
+def compute_circular_vel(angles, time_intervals):
+  
+    
+    # Initialize the speed array with NaNs or zeros, same length as angles
+    speed = np.full_like(angles, np.nan, dtype=float)
 
+    # Calculate the difference between consecutive angles
+    diff = np.diff(angles)
+
+    # Adjust differences for circular wrap-around
+    adjusted_diff = (diff + 180) % 360 - 180
+
+    # Compute speed by dividing the adjusted differences by the time intervals
+    speed[1:] = adjusted_diff / time_intervals
+
+    return speed
 
 
 
@@ -264,6 +325,103 @@ def get_behavior_state_for_jump_triggered_signal(jumping_index_array,behavior_st
     
     return behavior_stamp_for_jump_triggered_trial
 
+
+
+
+def circular_difference(angle1, angle2):
+    # Compute the raw difference
+    diff = angle1 - angle2
+
+    # Adjust for circular wrap-around
+    adjusted_diff = (diff + np.pi) % (np.pi*2) - np.pi
+
+    return adjusted_diff
+
+def is_within_range(angle1, angle2, threshold):
+    # Compute the circular difference
+    diff = circular_difference(angle1, angle2)
+
+    # Compute the absolute difference
+    abs_diff = np.abs(diff)
+
+    # Check if the absolute difference is within the threshold
+    return abs_diff <= threshold
+
+
+
+def get_bump_jump_flow_index_array(jumping_index_array,volume_time,PVA_array):
+    jump_flow_index = np.zeros(len(jumping_index_array))
+    jump_start_indices = np.zeros(len(jumping_index_array))
+    bump_move_time = np.zeros(len(jumping_index_array))
+    #Criteria from Kim et al.,2017
+    frame_before_jump = int(np.ceil(1/volume_time))
+    frame_after_jump = int(np.ceil(2.5/volume_time))
+    frame_after_jump_for_bump_move = int(np.ceil(29.5/volume_time))
+                
+                
+                
+                
+    for current_index in range (len(jumping_index_array)):
+        jump_index_current = jumping_index_array[current_index]
+         
+        circular_mean_initial = circmean(PVA_array[jump_index_current-frame_before_jump:jump_index_current+1], high=np.pi, low=-np.pi)
+        circular_mean_4_frame_jump = circmean(PVA_array[jump_index_current:jump_index_current+4], high=np.pi, low=-np.pi)
+        #2.5s after jump
+        circular_mean_after_jump = circmean(PVA_array[jump_index_current+1:jump_index_current+1+frame_after_jump], high=np.pi, low=-np.pi)
+        
+        
+        
+        # Step through the window after the event
+        for step in range(1, frame_after_jump_for_bump_move + 1):
+            jump_detected = False
+            slide_detected = False
+            window_mean = circmean(PVA_array[jump_index_current+1:jump_index_current+1+step], high=np.pi, low=-np.pi)
+
+            # Detect a jump (using larger threshold)
+            if not is_within_range(circular_mean_initial, window_mean, threshold = np.pi/3):
+                jump_start_indices[current_index] = jump_index_current + step  # Store when jump starts
+                bump_move_time[current_index] = step*volume_time
+                jump_detected = True  # Stop checking for jump
+                break
+            
+            # Detect a slide (using smaller threshold)
+            if not is_within_range(circular_mean_initial, window_mean, threshold = np.pi/8):
+                jump_start_indices[current_index] = jump_index_current + step  # Store when slide starts
+                bump_move_time[current_index] = step*volume_time
+                slide_detected = True  # Stop checking for slide
+                break
+
+        
+        if not jump_detected and not slide_detected:
+            jump_start_indices[current_index] = np.nan
+            bump_move_time[current_index] = np.nan
+            
+            
+            
+            
+        if is_within_range(circular_mean_initial,circular_mean_4_frame_jump,threshold = np.pi/4)== False:
+            jump_flow_index[current_index] = 0
+        elif is_within_range(circular_mean_initial,circular_mean_after_jump,threshold = np.pi/4) == True:
+            jump_flow_index[current_index] = 1
+        else:
+            jump_flow_index[current_index] = 2
+        
+    
+    return jump_flow_index,jump_start_indices,bump_move_time 
+
+
+def get_bump_amplitude_at_bump_jump_flow(bump_amplitude_array,jump_start_array):
+    amplitude_at_jump =  np.zeros(len(jump_start_array))
+ 
+    
+    for current_frame in  range(len(jump_start_array)):
+        if np.isnan(jump_start_array[current_frame]):
+            amplitude_at_jump[current_frame] = np.nan
+        else:
+            frame = int(jump_start_array[current_frame])
+            amplitude_at_jump[current_frame] = np.mean(bump_amplitude_array[frame-2:frame+1])
+    
+    return amplitude_at_jump
 
 
 def get_PVA_strength_ratio_before_bar_jump(jumping_index_array,PVA_strtength_ratio_array,volume_time,s_before_jump):
@@ -458,9 +616,10 @@ def sliding_circular_mean(data, window_size):
 def get_time_offset_recover_after_bar_jump(offset_data,jumping_index_array,volume_time):
     time_return = np.zeros(len(jumping_index_array))
     circular_mean = circmean(offset_data, high=np.pi, low=-np.pi)
-    #Find range for acceptable offset return (+-22.5 degrees, one glomerulus)
-    circular_mean_upper_bound = (circular_mean+0.4 +np.pi) % (2 * np.pi) - np.pi 
-    circular_mean_lower_bound = (circular_mean-0.4 +np.pi) % (2 * np.pi) - np.pi 
+    #Find range for acceptable offset return (+-45 degrees)
+    angle_radians = 60 * (np.pi / 180)
+    circular_mean_upper_bound = (circular_mean+angle_radians +np.pi) % (2 * np.pi) - np.pi 
+    circular_mean_lower_bound = (circular_mean-angle_radians+np.pi) % (2 * np.pi) - np.pi 
     for i in range(len(jumping_index_array)):
         current_jump_index = jumping_index_array[i]
         #29s after jump for detecting bump return 
