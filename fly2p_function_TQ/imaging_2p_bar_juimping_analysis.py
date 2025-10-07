@@ -23,6 +23,7 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
     output_pooled_dictionary['output_PVA_strength_pooled'] = pd.DataFrame()
     output_pooled_dictionary['output_PVA_strength_z'] = pd.DataFrame()
     output_pooled_dictionary['output_bar_jumping_stop_stamp_pooled'] = []
+    output_pooled_dictionary['output_bar_jumping_Bump_amplitude_pooled'] = []
     output_pooled_dictionary['stop_s_before_jump'] = []
     output_pooled_dictionary['circular_variance'] = []
     output_pooled_dictionary['circular_mean_before_jump'] = pd.DataFrame()
@@ -34,6 +35,10 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
     output_pooled_dictionary['output_flytrial'] = []
     output_pooled_dictionary['volume_time'] = []
     output_pooled_dictionary['Angular_speed_during_offset_return'] = pd.DataFrame()
+    output_pooled_dictionary['delta7_bump_amplitude_before_bar_jump'] = []
+    output_pooled_dictionary['delta7_bump_amplitude_after_bar_jump'] = []
+    output_pooled_dictionary['delta7_bump_shape_before_bar_jump'] = pd.DataFrame()
+    output_pooled_dictionary['delta7_bump_shape_after_bar_jump'] = pd.DataFrame()
     #Follow the standard of Ki, et al., 2017
     output_pooled_dictionary['bump_jump_flow_index'] = pd.DataFrame()
     output_pooled_dictionary['sec_bump_move'] = []
@@ -45,12 +50,16 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
         output_pooled_dictionary['output_PVA_radian_pooled_red'] = pd.DataFrame()
         output_pooled_dictionary['output_bar_PVA_red_offset_pooled'] = pd.DataFrame()
         output_pooled_dictionary['output_PVA_strength_pooled_red'] = pd.DataFrame()
+        output_pooled_dictionary['output_bar_jumping_Bump_amplitude_pooled_red'] = []
         output_pooled_dictionary['output_greed_red_PVA_offset'] = pd.DataFrame()
         output_pooled_dictionary['circular_variance_red'] = []
         output_pooled_dictionary['PVA_strength_ratio'] = []
         output_pooled_dictionary['Angular_speed_entire_trial_red'] = pd.DataFrame()
         output_pooled_dictionary['EPG_bump_amplitude_at_bump_move'] = []
         output_pooled_dictionary['EPG_bump_amplitude_before_bar_jump'] = []
+        output_pooled_dictionary['EPG_bump_amplitude_after_bar_jump'] = []
+        output_pooled_dictionary['EPG_bump_shape_before_bar_jump'] = pd.DataFrame()
+        output_pooled_dictionary['EPG_bump_shape_after_bar_jump'] = pd.DataFrame()
     
     
     #Part 2:import data
@@ -89,7 +98,8 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
             Bump_speed_degrees =  (np.gradient(PVA_unwrapped)/volume_time) * 180/np.pi
             dff_normalized_8_roi = np.array([current_file[f'dFF_Roi_{i}'] for i in range(1, 9)]).T
             Bump_amplitude_V3, Bump_amplitude_V3_opposite = calcualteBumpAmplitude_V3(dff_normalized_8_roi,PVA_Radian)
-        
+            Bump_amplitude_max_min = calcualteBumpAmplitude(dff_normalized_8_roi)
+            
             if dual_imaging == 1:
                 PVA_Angle_red = current_file['PVA_Angle_red'].values
                 PVA_Radian_red = current_file['PVA_Radian_red'].values
@@ -99,6 +109,42 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
                 PVA_strength_ratio_log = np.log(PVA_strength_ratio)
                 dff_normalized_8_roi_red = np.array([current_file[f'dFF_Roi_{i}_red'] for i in range(1, 9)]).T
                 Bump_amplitude_V3_red, Bump_amplitude_V3_opposite_red = calcualteBumpAmplitude_V3(dff_normalized_8_roi_red,PVA_Radian_red)
+                Bump_amplitude_max_min_red = calcualteBumpAmplitude(dff_normalized_8_roi_red)
+                
+                
+                
+                
+                
+            #Get peak-centered bump shape
+            columns = ['dFF_Roi_5', 'dFF_Roi_6', 'dFF_Roi_7', 'dFF_Roi_8', 'dFF_Roi_1', 'dFF_Roi_2', 'dFF_Roi_3', 'dFF_Roi_4']
+            data = [current_file[col].to_numpy() for col in columns]
+            dff_normalized_8_roi_shifted = np.column_stack(data)
+            dff_normalized_8_roi_shifted = dff_normalized_8_roi_shifted.transpose()
+            df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI = np.zeros((len(dff_normalized_8_roi_shifted), len(dff_normalized_8_roi_shifted[0])))
+            
+            shifted_by_all_8_ROI = []
+        
+            for i in range(len(dff_normalized_8_roi_shifted[0])):
+                original_order = [0,1,2,3,4,5,6,7]
+                current_peak = np.argmax(dff_normalized_8_roi_shifted[:,i])
+                shift_by = current_peak - 3
+                shifted_order = original_order[shift_by % len(original_order):] + original_order[:shift_by % len(original_order)]
+                df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI[:,i] = dff_normalized_8_roi_shifted[shifted_order,i]
+                shifted_by_all_8_ROI.append(shift_by)
+                
+            if dual_imaging == 1:
+                columns = ['dFF_Roi_5_red', 'dFF_Roi_6_red', 'dFF_Roi_7_red', 'dFF_Roi_8_red', 'dFF_Roi_1_red', 'dFF_Roi_2_red', 'dFF_Roi_3_red', 'dFF_Roi_4_red']
+                data = [current_file[col].to_numpy() for col in columns]
+                dff_normalized_8_roi_shifted_red = np.column_stack(data)
+                dff_normalized_8_roi_shifted_red = dff_normalized_8_roi_shifted_red.transpose()
+                df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI_red = np.zeros((len(dff_normalized_8_roi_shifted_red), len(dff_normalized_8_roi_shifted_red[0])))
+                for i in range(len(dff_normalized_8_roi_shifted[0])):
+                    original_order = [0,1,2,3,4,5,6,7]
+                    current_peak = np.argmax(dff_normalized_8_roi_shifted_red[:,i])
+                    shift_by = current_peak - 3
+                    shifted_order = original_order[shift_by % len(original_order):] + original_order[:shift_by % len(original_order)]
+                    df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI_red[:,i] = dff_normalized_8_roi_shifted_red[shifted_order,i]
+                    shifted_by_all_8_ROI.append(shift_by)
               
         
             #Get persistence period
@@ -160,6 +206,15 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
             delta7_bump_amplitude_at_bump_move_current = get_bump_amplitude_at_bump_jump_flow(Bump_amplitude_V3 ,bump_flow_jump_start_frame)
     
             Angular_speed_at_bump_move_current  = get_bump_amplitude_at_bump_jump_flow(Angular_speed_degrees,bump_flow_jump_start_frame)
+        
+        
+            #get Bump shape before/after bar jump
+            delta7_bump_shape_before_bar_jump_current = get_bump_shape_before_bar_jump(df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI,current_jumping_frame,0.5,8,volume_time)
+            delta7_bump_shape_after_bar_jump_current = get_bump_shape_after_bar_jump(df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI,current_jumping_frame,0.5,8,volume_time)
+            if dual_imaging == 1:
+                bump_shape_before_bar_jump_current_red = get_bump_shape_before_bar_jump(df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI_red,current_jumping_frame,0.5,8,volume_time)
+                bump_shape_after_bar_jump_current_red = get_bump_shape_after_bar_jump(df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI_red,current_jumping_frame,0.5,8,volume_time)
+                
             
             
             #Calculate the time that needs for bump to return to its previous offset
@@ -177,14 +232,19 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
             jump_triggered_Bar_PVA_offset = get_data_before_after_bar_jump(current_jumping_frame, radian_offset_PVA_Bar, volume_time,29) 
             jump_triggered_Angular_speed = get_data_before_after_bar_jump(current_jumping_frame, Angular_speed_degrees, volume_time,29) 
             jump_triggered_Forward_speed = get_data_before_after_bar_jump(current_jumping_frame, Forward_speed_degrees, volume_time,29) 
+            jump_triggered_Bump_amplitude = get_data_before_after_bar_jump(current_jumping_frame, Bump_amplitude_max_min, volume_time,29) 
+            delta7_bump_amplitude_before_bar_jump_current = get_signal_before_bar_jump (current_jumping_frame,Bump_amplitude_V3,volume_time,0.5) 
+            delta7_bump_amplitude_after_bar_jump_current = get_signal_after_bar_jump (current_jumping_frame,Bump_amplitude_V3,volume_time,0.5) 
         
         
             if dual_imaging == 1:
                 jump_triggered_PVA_red = get_data_before_after_bar_jump(current_jumping_frame, PVA_Radian_red, volume_time,29)
                 jump_triggered_Bar_PVA_red_offset = get_data_before_after_bar_jump(current_jumping_frame, radian_offset_PVA_red_Bar, volume_time,29)
                 jump_triggered_Bar_PVA_red_green_offset = get_data_before_after_bar_jump(current_jumping_frame, radian_offset_PVA_red_green, volume_time,29)
-                strength_ratio_before_jump = get_PVA_strength_ratio_before_bar_jump (current_jumping_frame,PVA_strength_ratio_log,volume_time,0.5) 
-                EPG_bump_amplitude_before_bar_jump_current = get_PVA_strength_ratio_before_bar_jump (current_jumping_frame,Bump_amplitude_V3_red,volume_time,0.5) 
+                jump_triggered_Bump_amplitude_red = get_data_before_after_bar_jump(current_jumping_frame, Bump_amplitude_max_min_red, volume_time,29) 
+                strength_ratio_before_jump = get_signal_before_bar_jump (current_jumping_frame,PVA_strength_ratio_log,volume_time,0.5) 
+                EPG_bump_amplitude_before_bar_jump_current = get_signal_before_bar_jump (current_jumping_frame,Bump_amplitude_V3_red,volume_time,0.5) 
+                EPG_bump_amplitude_after_bar_jump_current = get_signal_after_bar_jump (current_jumping_frame,Bump_amplitude_V3_red,volume_time,0.5) 
                 Angular_speed_during_offset_return = get_Angular_speed_during_offset_return(current_jumping_frame,Angular_speed_degrees,volume_time,time_for_offset_recover)
         
             
@@ -198,17 +258,28 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
             jump_triggered_behavior_stamp_current = pd.DataFrame(jump_triggered_behavior_stamp)
             jump_triggered_Angular_speed_current = pd.DataFrame(jump_triggered_Angular_speed)
             jump_triggered_Forward_speed_current = pd.DataFrame(jump_triggered_Forward_speed)
+            jump_triggered_Bump_amplitude_current = pd.DataFrame(jump_triggered_Bump_amplitude)
+            jump_triggered_Bump_amplitude_current_red = pd.DataFrame(jump_triggered_Bump_amplitude_red)
             stop_s_before_jump_current = pd.DataFrame(stop_s_before_jump)
             strength_ratio_before_jump_current =pd.DataFrame(strength_ratio_before_jump)
             sec_bump_move = pd.DataFrame(sec_bump_move)
             EPG_bump_amplitude_at_bump_move_current =pd.DataFrame(EPG_bump_amplitude_at_bump_move_current)
             EPG_bump_amplitude_before_bar_jump_current =pd.DataFrame(EPG_bump_amplitude_before_bar_jump_current) 
+            EPG_bump_amplitude_after_bar_jump_current =pd.DataFrame(EPG_bump_amplitude_after_bar_jump_current) 
+            delta7_bump_amplitude_before_bar_jump_current =pd.DataFrame(delta7_bump_amplitude_before_bar_jump_current) 
+            delta7_bump_amplitude_after_bar_jump_current =pd.DataFrame(delta7_bump_amplitude_after_bar_jump_current) 
             delta7_bump_amplitude_at_bump_move_current =pd.DataFrame(delta7_bump_amplitude_at_bump_move_current)
             Angular_speed_at_bump_move_current  = pd.DataFrame(Angular_speed_at_bump_move_current)
             circular_mean_before_bar_jump_current = pd.DataFrame(circular_mean_before_bar_jump )
             time_for_offset_recover_current = pd.DataFrame(time_for_offset_recover)
             Angular_speed_during_offset_return_current = pd.DataFrame(Angular_speed_during_offset_return)
  
+
+
+
+ 
+  
+           
             #Store the data 
             if count == 0:
                 output_pooled_dictionary['output_PVA_radian_pooled'] =  jump_triggered_PVA_current
@@ -226,6 +297,9 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
                 output_pooled_dictionary['sec_bump_move'] = sec_bump_move
                 output_pooled_dictionary['delta7_bump_amplitude_at_bump_move'] = delta7_bump_amplitude_at_bump_move_current
                 output_pooled_dictionary['Angular_speed_at_bump_move'] = Angular_speed_at_bump_move_current
+                output_pooled_dictionary['output_bar_jumping_Bump_amplitude_pooled'] = jump_triggered_Bump_amplitude_current
+                output_pooled_dictionary['delta7_bump_shape_before_bar_jump'] = pd.DataFrame(delta7_bump_shape_before_bar_jump_current)
+                output_pooled_dictionary['delta7_bump_shape_after_bar_jump'] = pd.DataFrame(delta7_bump_shape_after_bar_jump_current)
                 if dual_imaging == 1:
                     output_pooled_dictionary['output_PVA_radian_pooled_red'] = jump_triggered_PVA_red_current
                     output_pooled_dictionary['output_bar_PVA_red_offset_pooled'] = jump_triggered_Bar_PVA_red_offset_current
@@ -233,6 +307,12 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
                     output_pooled_dictionary['PVA_strength_ratio'] = strength_ratio_before_jump_current
                     output_pooled_dictionary['EPG_bump_amplitude_at_bump_move'] = EPG_bump_amplitude_at_bump_move_current
                     output_pooled_dictionary['EPG_bump_amplitude_before_bar_jump'] = EPG_bump_amplitude_before_bar_jump_current
+                    output_pooled_dictionary['EPG_bump_amplitude_after_bar_jump'] = EPG_bump_amplitude_after_bar_jump_current
+                    output_pooled_dictionary['delta7_bump_amplitude_before_bar_jump'] = delta7_bump_amplitude_before_bar_jump_current
+                    output_pooled_dictionary['delta7_bump_amplitude_after_bar_jump'] = delta7_bump_amplitude_after_bar_jump_current
+                    output_pooled_dictionary['output_bar_jumping_Bump_amplitude_pooled_red'] = jump_triggered_Bump_amplitude_current_red
+                    output_pooled_dictionary['EPG_bump_shape_before_bar_jump'] = pd.DataFrame(bump_shape_before_bar_jump_current_red)
+                    output_pooled_dictionary['EPG_bump_shape_after_bar_jump'] = pd.DataFrame(bump_shape_after_bar_jump_current_red)
             else:
                 output_pooled_dictionary['output_PVA_radian_pooled'] = pd.concat([ output_pooled_dictionary['output_PVA_radian_pooled'],jump_triggered_PVA_current], ignore_index=True)
                 output_pooled_dictionary['output_bar_PVA_offset_pooled'] = pd.concat([ output_pooled_dictionary['output_bar_PVA_offset_pooled'],jump_triggered_Bar_PVA_offset_current], ignore_index=True)
@@ -249,6 +329,9 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
                 output_pooled_dictionary['sec_bump_move'] = pd.concat([ output_pooled_dictionary['sec_bump_move'],sec_bump_move], ignore_index=True)
                 output_pooled_dictionary['delta7_bump_amplitude_at_bump_move'] = pd.concat([ output_pooled_dictionary['delta7_bump_amplitude_at_bump_move'],delta7_bump_amplitude_at_bump_move_current], ignore_index=True)
                 output_pooled_dictionary['Angular_speed_at_bump_move'] =pd.concat([ output_pooled_dictionary['Angular_speed_at_bump_move'],Angular_speed_at_bump_move_current], ignore_index=True) 
+                output_pooled_dictionary['output_bar_jumping_Bump_amplitude_pooled'] = pd.concat([ output_pooled_dictionary['output_bar_jumping_Bump_amplitude_pooled'],jump_triggered_Bump_amplitude_current], ignore_index=True)
+                output_pooled_dictionary['delta7_bump_shape_before_bar_jump'] = pd.concat([output_pooled_dictionary['delta7_bump_shape_before_bar_jump'] ,pd.DataFrame(delta7_bump_shape_before_bar_jump_current)],ignore_index=True, axis =1) 
+                output_pooled_dictionary['delta7_bump_shape_after_bar_jump'] = pd.concat([output_pooled_dictionary['delta7_bump_shape_after_bar_jump'] ,pd.DataFrame(delta7_bump_shape_after_bar_jump_current)],ignore_index=True, axis =1) 
                                
                 
                 if dual_imaging == 1:
@@ -258,6 +341,12 @@ def run_bar_jumping_analysis_across_trial(directory,directory_jumping_frame,dual
                     output_pooled_dictionary['PVA_strength_ratio'] = pd.concat([ output_pooled_dictionary['PVA_strength_ratio'],strength_ratio_before_jump_current], ignore_index=True)
                     output_pooled_dictionary['EPG_bump_amplitude_at_bump_move'] = pd.concat([ output_pooled_dictionary['EPG_bump_amplitude_at_bump_move'],EPG_bump_amplitude_at_bump_move_current], ignore_index=True)
                     output_pooled_dictionary['EPG_bump_amplitude_before_bar_jump'] = pd.concat([ output_pooled_dictionary['EPG_bump_amplitude_before_bar_jump'],EPG_bump_amplitude_before_bar_jump_current], ignore_index=True)
+                    output_pooled_dictionary['EPG_bump_amplitude_after_bar_jump'] = pd.concat([ output_pooled_dictionary['EPG_bump_amplitude_after_bar_jump'],EPG_bump_amplitude_after_bar_jump_current], ignore_index=True)
+                    output_pooled_dictionary['delta7_bump_amplitude_before_bar_jump'] = pd.concat([ output_pooled_dictionary['delta7_bump_amplitude_before_bar_jump'],delta7_bump_amplitude_before_bar_jump_current], ignore_index=True)
+                    output_pooled_dictionary['delta7_bump_amplitude_after_bar_jump'] = pd.concat([ output_pooled_dictionary['delta7_bump_amplitude_after_bar_jump'],delta7_bump_amplitude_after_bar_jump_current], ignore_index=True)
+                    output_pooled_dictionary['output_bar_jumping_Bump_amplitude_pooled_red'] = pd.concat([ output_pooled_dictionary['output_bar_jumping_Bump_amplitude_pooled_red'],jump_triggered_Bump_amplitude_current_red], ignore_index=True)
+                    output_pooled_dictionary['EPG_bump_shape_before_bar_jump'] = pd.concat([output_pooled_dictionary['EPG_bump_shape_before_bar_jump'] ,pd.DataFrame(bump_shape_before_bar_jump_current_red)],ignore_index=True, axis =1) 
+                    output_pooled_dictionary['EPG_bump_shape_after_bar_jump'] = pd.concat([output_pooled_dictionary['EPG_bump_shape_after_bar_jump'] ,pd.DataFrame(bump_shape_after_bar_jump_current_red)],ignore_index=True, axis =1) 
             
             
             
@@ -424,16 +513,76 @@ def get_bump_amplitude_at_bump_jump_flow(bump_amplitude_array,jump_start_array):
     return amplitude_at_jump
 
 
-def get_PVA_strength_ratio_before_bar_jump(jumping_index_array,PVA_strtength_ratio_array,volume_time,s_before_jump):
-    strength_ratio_before_jump = np.zeros(len(jumping_index_array))
+def get_signal_before_bar_jump(jumping_index_array,signal_array,volume_time,s_before_jump):
+    signal_before_jump = np.zeros(len(jumping_index_array))
     frame_before_jump = int(np.ceil(s_before_jump/volume_time))
     
     
     for current_index in range (len(jumping_index_array)):
         jump_index_current = jumping_index_array[current_index]
-        strength_ratio_before_jump[current_index] = np.mean(PVA_strtength_ratio_array[jump_index_current-frame_before_jump :jump_index_current])
+        signal_before_jump[current_index] = np.mean(signal_array[jump_index_current-frame_before_jump :jump_index_current])
         
-    return strength_ratio_before_jump
+    return signal_before_jump
+
+
+def get_signal_after_bar_jump(jumping_index_array,signal_array,volume_time,s_after_jump):
+    signal_after_jump = np.zeros(len(jumping_index_array))
+    frame_after_jump = int(np.ceil(s_after_jump/volume_time))
+    
+    
+    for current_index in range (len(jumping_index_array)):
+        jump_index_current = jumping_index_array[current_index]
+        signal_after_jump[current_index] = np.mean(signal_array[jump_index_current :(jump_index_current+frame_after_jump+1)])
+        
+    return signal_after_jump
+
+
+def get_bump_shape_before_bar_jump(Bump_shape_array, jumping_index_array, s_before_jump, ROI_number, volume_time):
+    """
+    Extracts the ROI signal (bump shape) for several frames before each bar jump.
+    Returns an array of shape (ROI_number, total_frames_across_all_jumps).
+    """
+    bump_shape_before_jump = np.empty((ROI_number, 0))
+    frame_before_jump = int(np.ceil(s_before_jump / volume_time))
+
+    for current_index in range(len(jumping_index_array)):
+        jump_index_current = jumping_index_array[current_index]
+
+        # Skip if there's not enough data before the jump
+        if jump_index_current < frame_before_jump:
+            continue
+
+        # Get the segment of shape (ROI_number, frame_before_jump)
+        segment = Bump_shape_array[:, jump_index_current - frame_before_jump : jump_index_current]
+
+        # Concatenate along time axis
+        bump_shape_before_jump = np.hstack((bump_shape_before_jump, segment))
+
+    return bump_shape_before_jump
+
+
+
+def get_bump_shape_after_bar_jump(Bump_shape_array, jumping_index_array, s_after_jump, ROI_number, volume_time):
+    """
+    Extracts the ROI signal (bump shape) for several frames after each bar jump.
+    Returns an array of shape (ROI_number, total_frames_across_all_jumps).
+    """
+    bump_shape_after_jump = np.empty((ROI_number, 0))
+    frame_after_jump = int(np.ceil(s_after_jump / volume_time))
+
+    for current_index in range(len(jumping_index_array)):
+        jump_index_current = jumping_index_array[current_index]
+
+
+
+        # Get the segment of shape (ROI_number, frame_before_jump)
+        segment = Bump_shape_array[:, jump_index_current :(jump_index_current+frame_after_jump+1)]
+
+        # Concatenate along time axis
+        bump_shape_after_jump = np.hstack((bump_shape_after_jump, segment))
+
+    return bump_shape_after_jump
+
 
 
 

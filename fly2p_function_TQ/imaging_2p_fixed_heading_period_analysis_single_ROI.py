@@ -74,6 +74,8 @@ def run_fixed_heading_period_analysis_across_trial_single_ROI(directory,dual_ima
         Forward_velocity = current_file['Forward_Velocity'].values
         Forward_speed_degrees = np.abs(Forward_velocity) * 180/np.pi
         F_background_subtracted = current_file['F_background_subtracted'].values
+        #Raw_F = current_file['Raw_F_dewndrites'].values
+        #Raw_F = current_file['Raw_F_axon'].values
         Raw_F = current_file['Raw_F'].values
         zscore_signal_background_subtracted = zscore(F_background_subtracted)
         zscore_signal_raw_F = zscore(Raw_F)

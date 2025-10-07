@@ -46,6 +46,91 @@ def PVA_radian_calcul (dff_array, frame_number, ROI_NUM):
     
     return PVA_radianArray,PVAStrength 
 
+import numpy as np
+
+def PVA_radian_calcul_norm(
+    dff_array,
+    frame_number,
+    ROI_NUM,
+    norm="contrast",        # "contrast" | "mass-clip" | "mass-offset"
+    return_degrees=False
+):
+    """
+    Population Vector Average (PVA) for PB/EB ROIs.
+
+    Parameters
+    ----------
+    dff_array : array-like, shape (T, R)
+        Activity per frame and ROI. Can be z-scored (may include negatives).
+    frame_number : int
+        Number of frames T.
+    ROI_NUM : int
+        Number of ROIs R (must be 8 or 16 for PB angles).
+    norm : str
+        - "contrast"   : strength = |Σ w_i e^{jθ_i}| / Σ |w_i|
+                          (contrast-sensitive; ideal for z-scored data; in [0,1])
+        - "mass-clip"  : w⁺=max(w,0); strength = |Σ w⁺ e^{jθ_i}| / Σ w⁺
+                          (classic circ_r on non-negative mass; in [0,1])
+        - "mass-offset": w⁺=w - min(w) (if min<0 else w); same formula as mass-clip
+                          (preserves per-frame contrasts while making weights ≥0)
+    return_degrees : bool
+        If True, returns angles in degrees; else radians.
+
+    Returns
+    -------
+    angles : (T,) ndarray
+        PVA angle per frame (radians by default, or degrees if return_degrees=True).
+    strength : (T,) ndarray
+        PVA strength per frame, bounded in [0,1].
+    """
+    # --- validate & coerce ---
+    X = np.asarray(dff_array, dtype=float)
+    if X.shape != (frame_number, ROI_NUM):
+        raise ValueError(f"Shape mismatch: expected {(frame_number, ROI_NUM)}, got {X.shape}.")
+    if ROI_NUM not in (8, 16):
+        raise ValueError("ROI_NUM must be 8 or 16 for PB angles.")
+
+    # --- PB angle conventions (centered in [-π, π]) ---
+    if ROI_NUM == 8:
+        theta = np.array([np.pi/8, 3*np.pi/8, 5*np.pi/8, 7*np.pi/8,
+                          -7*np.pi/8, -5*np.pi/8, -3*np.pi/8, -np.pi/8], float)
+    else:  # 16
+        theta = np.pi * (2*np.arange(ROI_NUM) + 1) / (2.0 * ROI_NUM)
+        theta = (theta + np.pi) % (2*np.pi) - np.pi  # wrap to [-π, π]
+
+    # --- choose normalization mode & (possibly) transform weights ---
+    if norm == "contrast":
+        # signed numerator, abs denominator (good for z-scored data)
+        W_for_vec = X
+        denom = np.sum(np.abs(X), axis=1)
+    elif norm == "mass-clip":
+        # classic circ_r on non-negative "mass"
+        W_for_vec = np.clip(X, 0, None)
+        denom = np.sum(W_for_vec, axis=1)
+    elif norm == "mass-offset":
+        # shift each frame so min becomes 0 (if negative)
+        mins = X.min(axis=1, keepdims=True)
+        W_for_vec = np.where(mins < 0, X - mins, X)
+        denom = np.sum(W_for_vec, axis=1)
+    else:
+        raise ValueError("norm must be 'contrast', 'mass-clip', or 'mass-offset'.")
+
+    # --- vector sums ---
+    c = np.cos(theta)[None, :]
+    s = np.sin(theta)[None, :]
+    Rx = np.sum(W_for_vec * c, axis=1)
+    Ry = np.sum(W_for_vec * s, axis=1)
+
+    # --- angle & strength (bounded [0,1]) ---
+    angles = np.arctan2(Ry, Rx)
+    Rlen = np.hypot(Rx, Ry)
+    strength = np.where(denom > 0, Rlen / denom, 0.0)
+    strength = np.clip(strength, 0.0, 1.0)
+
+    if return_degrees:
+        angles = np.degrees(angles)
+
+    return angles, strength
 
 
 def PVAangleToRoi (PVA_angle):
@@ -342,6 +427,49 @@ def get_bump_shape_at_strong_signal(Bump_shape_array,signal_index_array,ROI_numb
     
     return average_bump_shape_at_strong_signal_array
 
+def get_bump_shape_at_strong_signal_various_speed(
+    Bump_shape_array,
+    signal_index_array,
+    ROI_number,
+    Angular_speed_array=None,
+    angular_speed_range=None
+):
+    """
+    Extracts and averages bump shapes from selected frames based on signal strength 
+    and optional angular speed range.
+
+    Parameters:
+        Bump_shape_array (ndarray): shape (ROIs, time)
+        signal_index_array (array-like): frame indices where signal passes threshold
+        ROI_number (int): 8 or 16
+        Angular_speed_array (array-like or None): angular speed per frame
+        angular_speed_range (tuple or None): (min_speed, max_speed)
+
+    Returns:
+        average_bump_shape_at_strong_signal_array (ndarray): shape (ROIs,)
+    """
+
+    if ROI_number == 8:
+        bump_shape_at_strong_signal_array = np.empty((8, 0))
+    else:
+        bump_shape_at_strong_signal_array = np.empty((16, 0))
+
+    for current_index in signal_index_array:
+        # If angular speed condition is given, apply it
+        if Angular_speed_array is not None and angular_speed_range is not None:
+            speed = Angular_speed_array[current_index]
+            if not (angular_speed_range[0] <= speed <= angular_speed_range[1]):
+                continue  # Skip this frame
+
+        bump_vec = Bump_shape_array[:, current_index].reshape(-1, 1)
+        bump_shape_at_strong_signal_array = np.hstack((bump_shape_at_strong_signal_array, bump_vec))
+
+    # Handle case where no valid frames remain
+    if bump_shape_at_strong_signal_array.shape[1] == 0:
+        return np.full((ROI_number,), np.nan)
+
+    average_bump_shape_at_strong_signal_array = np.mean(bump_shape_at_strong_signal_array, axis=1)
+    return average_bump_shape_at_strong_signal_array
 
 
 def get_PVA_at_strong_signal(PVA_array,signal_index_array):
@@ -446,193 +574,11 @@ def plot_strong_signal_frame_pva_histogram(data_all, selected_animal=None):
     # Show plot
     plt.show()
 
-    
 
 
 
 
 
-def plot_circular_variance_distribution_at_turning_slide_window(data_groups, group_names=None, bins=30):
-    """
-    Plots the circular variance distribution for up to two groups using completely separate calculations.
 
-    Parameters:
-    - data_groups (list of lists or np.ndarray): List of 1 or 2 datasets to be plotted.
-    - group_names (list of str, optional): Names corresponding to each dataset.
-    - bins (int): Number of bins for the histogram.
-    """
-
-    # Ensure only 1 or 2 groups are provided
-    if len(data_groups) not in [1, 2]:
-        raise ValueError("This function only supports 1 or 2 groups.")
-
-    # Default group names if not provided
-    if group_names is None:
-        group_names = [f"Group {i+1}" for i in range(len(data_groups))]
-
-    # Define bins (from 0 to 1)
-    bin_edges = np.linspace(0, 1, bins + 1)
-
-    # Define color map for groups
-    colors = ['dodgerblue', 'darkorange'][:len(data_groups)]  # Blue for 1st group, Orange for 2nd
-
-    # Create figure
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    # Process each group **completely separately**
-    if len(data_groups) == 1:
-        # Process **only one group**
-        data_1 = np.concatenate([np.asarray(d, dtype=float).flatten() for d in data_groups[0]])
-        hist_1, _ = np.histogram(data_1, bins=bin_edges)  # Compute histogram separately
-        hist_1 = hist_1 / hist_1.sum() if hist_1.sum() > 0 else hist_1  # Normalize separately
-        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2  # Bin centers
-
-        # Plot histogram
-        ax.fill_between(bin_centers, hist_1, alpha=0.4, color=colors[0], label=group_names[0])
-        
-        # Compute mean
-        mean_1 = np.mean(data_1)
-        ax.axvline(mean_1, color=colors[0], linestyle='dashed', linewidth=2, label=f'{group_names[0]} Mean: {mean_1:.2f}')
-
-        # Set y-limits
-        max_y = max(hist_1) * 1.1 
-        ax.set_ylim(0, max_y)
-
-    elif len(data_groups) == 2:
-        # Process **two groups separately**
-        data_1 = np.concatenate([np.asarray(d, dtype=float).flatten() for d in data_groups[0]])
-        data_2 = np.concatenate([np.asarray(d, dtype=float).flatten() for d in data_groups[1]])
-
-        # Compute histograms separately
-        hist_1, _ = np.histogram(data_1, bins=bin_edges)
-        hist_2, _ = np.histogram(data_2, bins=bin_edges)
-
-        # Normalize each histogram separately
-        hist_1 = hist_1 / hist_1.sum() 
-        hist_2 = hist_2 / hist_2.sum() 
-
-        # Compute bin centers
-        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2  
-
-        # Plot histograms separately
-        ax.fill_between(bin_centers, hist_1, alpha=0.4, color=colors[0], label=group_names[0])
-        ax.fill_between(bin_centers, hist_2, alpha=0.4, color=colors[1], label=group_names[1])
-
-        # Compute means separately
-        mean_1 = np.mean(data_1)
-        mean_2 = np.mean(data_2)
-
-        # Plot means separately
-        ax.axvline(mean_1, color=colors[0], linestyle='dashed', linewidth=2, label=f'{group_names[0]} Mean: {mean_1:.2f}')
-        ax.axvline(mean_2, color=colors[1], linestyle='dashed', linewidth=2, label=f'{group_names[1]} Mean: {mean_2:.2f}')
-
-        # Set y-limits based on max of both histograms
-        max_y = max(max(hist_1), max(hist_2)) * 1.1 
-        ax.set_ylim(0, max_y)
-
-    # Formatting
-    ax.set_xlim(0, 1)  # X-axis from 0 to 1
-    ax.set_xticks(np.linspace(0, 1, 6))  
-    ax.set_xlabel("Circular Variance", fontsize=14)
-    ax.set_ylabel("Proportion", fontsize=14)
-    ax.legend(fontsize=12, loc="upper right")
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.set_title("Circular Variance Distribution During Walking", fontsize=16, fontweight='bold')
-
-    # Show plot
-    plt.tight_layout()
-    plt.show()
-
-
-
-
-
-def align_radian_offset_to_zero(data_dict, key_name='output_PVA_heading_offset'):
-    """
-    Align the circular mean of radian offset data to zero for each key in the dictionary 
-    and combine all the aligned data.
-
-    Parameters:
-        data_dict (dict): A dictionary containing radian offset arrays as values.
-                          The structure should be {key: [array]}.
-        key_name (str): The key in the dictionary containing the radian offset arrays.
-
-    Returns:
-        np.ndarray: A combined array of all aligned radian offset data.
-    """
-    all_aligned_data = []
-
-    # Loop through each key in the dictionary
-    for key, radian_offset_list in data_dict[key_name].items():
-        # Extract the radian offset array
-        radian_offset = radian_offset_list[0]  # Assuming the array is the first item in the list
-        
-        # Align the mean angle to zero
-        mean_angle = circmean(radian_offset, high=np.pi, low=-np.pi)  # Compute circular mean
-        radian_offset_aligned = (radian_offset - mean_angle + np.pi) % (2 * np.pi) - np.pi  # Shift to align mean at zero
-        
-        # Append the aligned data to the combined list
-        all_aligned_data.append(radian_offset_aligned)
-
-    # Concatenate all aligned data into a single array
-    all_aligned_data_combined = np.concatenate(all_aligned_data)
-
-    return all_aligned_data_combined    
-
-
-def plot_aligned_radian_offset_distribution(aligned_radian_offset_1, aligned_radian_offset_2=None, 
-                                            label_1="EPG_shi_cl", label_2="empty_control", 
-                                            color_1="Navy", color_2="grey", bins=30):
-    """
-    Plots the distribution of aligned radian offsets with circular variance.
-    
-    Parameters:
-    - aligned_radian_offset_1: First dataset (required)
-    - aligned_radian_offset_2: Second dataset (optional)
-    - label_1: Label for first dataset
-    - label_2: Label for second dataset (if provided)
-    - color_1: Color for first dataset
-    - color_2: Color for second dataset (if provided)
-    - bins: Number of bins for histogram
-    """
-
-    # Define bins from -π to π
-    bin_edges = np.linspace(-np.pi, np.pi, bins + 1)
-
-    # Compute histogram for first dataset
-    hist_1, _ = np.histogram(aligned_radian_offset_1, bins=bin_edges)
-    hist_1 = hist_1 / hist_1.sum()  # Normalize
-
-    # Compute bin centers
-    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2  
-
-    # Create figure
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    # Plot first dataset
-    ax.fill_between(bin_centers, hist_1, alpha=0.4, color=color_1, label=f"{label_1} (Circ. Var: {circvar(aligned_radian_offset_1, high=np.pi, low=-np.pi):.2f})")
-
-    # If second dataset is provided, plot it
-    if aligned_radian_offset_2 is not None:
-        hist_2, _ = np.histogram(aligned_radian_offset_2, bins=bin_edges)
-        hist_2 = hist_2 / hist_2.sum()  # Normalize
-        ax.fill_between(bin_centers, hist_2, alpha=0.4, color=color_2, label=f"{label_2} (Circ. Var: {circvar(aligned_radian_offset_2, high=np.pi, low=-np.pi):.2f})")
-
-    # Formatting
-    ax.set_xlim(-np.pi, np.pi)
-    ax.set_ylim(0, max(hist_1.max(), hist_2.max() if aligned_radian_offset_2 is not None else 0) * 1.1)  # Adjust y-limit
-    ax.set_xticks([-np.pi, -np.pi/2, 0, np.pi/2, np.pi])
-    ax.set_xticklabels([r'$-\pi$', r'$-\pi/2$', '0', r'$\pi/2$', r'$\pi$'])
-    ax.set_xlabel("Radian Offset", fontsize=14)
-    ax.set_ylabel("Proportion", fontsize=14)
-    ax.legend(fontsize=12, loc="upper right")
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.set_title("Comparison of Aligned Radian Offset Distributions", fontsize=16, fontweight='bold')
-
-    # Show plot
-    plt.tight_layout()
-    plt.show()
 
     

@@ -15,7 +15,7 @@ import math
 from scipy.signal import correlate
 from fly2p_function_TQ.imaging_2p_preprocessing import low_pass_filter_TQ, get_dff_array, normalizing_dff_array
 from fly2p_function_TQ.imaging_2p_fictrac_imaging_alignment import moving_wrapped_plot_by_offset,fictrack_signal_decoding,offset_calculation 
-from fly2p_function_TQ.imaging_2p_PVA_functions import calcualteBumpAmplitude, calcualteBumpAmplitude_V3, calculateBumpWidth_v1, PVA_radian_to_angle,calcualteBumpAmplitude_V4,PVAangleToRoi,strong_PVA_duration,strong_PVA_index,get_behavior_state_of_strong_PVA,get_bump_shape_at_strong_signal,get_PVA_at_strong_signal,strong_signal_index,weak_signal_index
+from fly2p_function_TQ.imaging_2p_PVA_functions import calcualteBumpAmplitude, calcualteBumpAmplitude_V3, calculateBumpWidth_v1, PVA_radian_to_angle,calcualteBumpAmplitude_V4,PVAangleToRoi,strong_PVA_duration,strong_PVA_index,get_behavior_state_of_strong_PVA,get_bump_shape_at_strong_signal,get_PVA_at_strong_signal,strong_signal_index,weak_signal_index,get_bump_shape_at_strong_signal_various_speed,PVA_radian_calcul,PVA_radian_calcul_norm,calcualteBumpAmplitude_V2_green
 
 
 
@@ -101,28 +101,6 @@ def find_stop_period_on_heading(head_velocity_array,degree_of_tolerance,shortest
     return stop_index_length_combined
 
 
-
-def max_raw_F_during_stopPeriod(stop_index_array,max_raw_f_array,volume_time):
-    F_at_stop = []
-    F_at_10s_later = []
- 
-    frame_10s_after_stop = int(np.ceil(10/volume_time))
-    
-        
-    
-    for current_index in range(len(stop_index_array)):
-        restart_index_current = stop_index_array[current_index,0]
-        stop_points_current = stop_index_array[current_index,0]-stop_index_array[current_index,1]+1
-        index_of_stop = stop_index_array[current_index,0]-stop_index_array[current_index,1]+1
-        
-        
-        if index_of_stop + frame_10s_after_stop - 1 <= stop_index_array[current_index,0]:
-            index_of_10s_after_stop = index_of_stop + frame_10s_after_stop - 1 
-            
-            F_at_10s_later.append(np.mean(max_raw_f_array[index_of_10s_after_stop-4:index_of_10s_after_stop+1]))
-            F_at_stop.append(np.mean(max_raw_f_array[stop_points_current:stop_points_current+5]))
-            
-    return F_at_stop,F_at_10s_later
     
 
 def Bump_shape_during_stopPeriod(stop_index_array,Bump_shape_array,volume_time,ROI_number):
@@ -1043,7 +1021,57 @@ def extract_signal_during_stop(stop_index_array, signal_array):
     return signal_during_stop
 
 
+def extract_signal_during_stop_and_before(stop_index_array, signal_array, volume_time, pre_stop_duration=5.0):
+    """
+    Extract signal traces during each stop period and the 5s before the stop period.
+    
+    Parameters:
+        stop_index_array (np.ndarray): shape (n_stops, 2), columns are [restart_idx, stop_duration]
+        signal_array (np.ndarray): shape (n_ROIs, n_frames) or (n_frames,), raw data
+        volume_time (float): time per frame (s)
+        pre_stop_duration (float): duration before stop to extract (default 5s)
+        
+    Returns:
+        signal_during_stop (List of np.ndarrays): signal during stop
+        signal_before_stop (List of np.ndarrays): signal 5s before stop (NaN-filled if not enough data)
+    """
+    signal_during_stop = []
+    signal_before_stop = []
 
+    is_1d = signal_array.ndim == 1
+    pre_stop_frames = int(np.round(pre_stop_duration / volume_time))
+
+    for current_index in range(len(stop_index_array)):
+        restart_idx = stop_index_array[current_index, 0]
+        stop_duration = stop_index_array[current_index, 1]
+        stop_start_idx = restart_idx - stop_duration + 1
+
+        # Extract during stop
+        if is_1d:
+            segment_during = signal_array[stop_start_idx:restart_idx + 1]
+        else:
+            segment_during = signal_array[:, stop_start_idx:restart_idx + 1]
+
+        # Extract before stop
+        before_start_idx = stop_start_idx - pre_stop_frames
+        before_end_idx = stop_start_idx
+
+        if before_start_idx < 0:
+            # Not enough data before stop: fill with NaNs of the right shape
+            if is_1d:
+                segment_before = np.full(pre_stop_frames, np.nan)
+            else:
+                segment_before = np.full((signal_array.shape[0], pre_stop_frames), np.nan)
+        else:
+            if is_1d:
+                segment_before = signal_array[before_start_idx:before_end_idx]
+            else:
+                segment_before = signal_array[:, before_start_idx:before_end_idx]
+
+        signal_during_stop.append(segment_during)
+        signal_before_stop.append(segment_before)
+
+    return signal_during_stop, signal_before_stop
 
 
 
@@ -1147,48 +1175,105 @@ def stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,b
 
 
 
-def plot_stopping_period_signal(signal_df, stopping_bin_size_s,decay_start_from_exact_stop,decay_length_s,active_period_length_s,run_spline_fit,celltype, trial_condition):
-    
-    sample_per_second = int(1/stopping_bin_size_s)
-    actual_stop_start_index = 0 + active_period_length_s*sample_per_second
-    end_of_decay_index = actual_stop_start_index+ decay_length_s*sample_per_second-1    
-    if decay_start_from_exact_stop == 1:
-        average_signal = round((signal_df.mean(axis=1)[actual_stop_start_index]-signal_df.mean(axis=1)[end_of_decay_index])/np.abs(signal_df.mean(axis=1)[actual_stop_start_index])*100,2)
+def plot_stopping_period_signal(signal_df,
+                                stopping_bin_size_s,
+                                decay_start_from_exact_stop,
+                                decay_length_s,
+                                active_period_length_s,
+                                run_spline_fit,
+                                celltype,
+                                trial_condition):
+
+    # basic checks
+    if signal_df is None or len(signal_df) == 0:
+        raise ValueError("signal_df is empty.")
+
+    # timebase
+    sample_per_second = 1.0 / float(stopping_bin_size_s)  # keep as float
+    bin_dt = float(stopping_bin_size_s)
+
+    # indices for averages
+    actual_stop_start_index = int(round(active_period_length_s * sample_per_second))
+    end_of_decay_index = int(round(actual_stop_start_index + decay_length_s * sample_per_second - 1))
+
+    # clamp to valid range
+    n_rows = signal_df.shape[0]
+    actual_stop_start_index = max(0, min(actual_stop_start_index, n_rows - 1))
+    end_of_decay_index = max(0, min(end_of_decay_index, n_rows - 1))
+
+    # compute mean once
+    mean_series = signal_df.mean(axis=1)
+    start_val = mean_series.iloc[actual_stop_start_index] if decay_start_from_exact_stop == 1 else mean_series.iloc[0]
+    end_val   = mean_series.iloc[end_of_decay_index]
+
+    # avoid divide-by-zero
+    denom = np.abs(start_val) if np.abs(start_val) > 1e-12 else 1e-12
+    average_signal = round((start_val - end_val) / denom * 100.0, 2)
+
+    # time array
+    time_array_decay = np.arange(n_rows, dtype=float) * bin_dt
+
+    # plot all traces (use positional indexing to avoid label issues)
+    plt.figure(figsize=(15, 8))
+    for i in range(signal_df.shape[1]):
+        plt.plot(time_array_decay, signal_df.iloc[:, i].to_numpy(), linewidth=2)
+
+    # mean trace
+    plt.plot(time_array_decay, mean_series.to_numpy(), linewidth=8)
+
+    if run_spline_fit:
+        # spline on the mean
+        # k=2 needs >=3 points; s is a light smoothing (tweak if needed)
+        if n_rows >= 3:
+            spl = UnivariateSpline(time_array_decay, mean_series.to_numpy(), k=2, s=3)
+            spl_y = spl(time_array_decay)
+            plt.plot(time_array_decay, spl_y, linewidth=2)
+
+            # "cutpoint": where slope ~ 0 (min |dy/dt|)
+            g = np.gradient(spl_y, bin_dt)
+            cut_idx = int(np.abs(g - 0.0).argmin())
+            cut_t = cut_idx * bin_dt
+            plt.axvline(x=cut_t, linestyle='--')
+
+            # tau estimate: time to reach ~63.2% of the drop from start toward asymptote
+            # reference level = start_val - 0.632*(start_val - stable_mean)
+            stable_mean = float(np.mean(spl_y[cut_idx:])) if cut_idx < n_rows - 1 else float(spl_y[-1])
+            target = start_val - 0.632 * (start_val - stable_mean)
+            tau_idx = int(np.abs(spl_y[:max(cut_idx,1)] - target).argmin())
+            tau = round(tau_idx * bin_dt, 2)
+
+            plt.title(
+                f"Bump amplitude over {decay_length_s}s of stop ({celltype}, {trial_condition})\n"
+                f"Average decay {average_signal}% | τ ≈ {tau}s | stable mean ≈ {stable_mean:.2f}",
+                fontsize=16
+            )
+        else:
+            plt.title(
+                f"Bump amplitude over {decay_length_s}s of stop ({celltype}, {trial_condition})\n"
+                f"Average decay {average_signal}%",
+                fontsize=16
+            )
     else:
-        average_signal = round((signal_df.mean(axis=1)[0]-signal_df.mean(axis=1)[end_of_decay_index])/signal_df.mean(axis=1)[0]*100,2)
-        
-    
-    
- 
-    time_array_decay = np.arange(len(signal_df.mean(axis=1)))/sample_per_second
-    
-    
-    
-    plt.figure(figsize=(15,8))
-    for i in range(len(signal_df.columns)):
-        plt.plot(time_array_decay,signal_df[i],linewidth = 0.7)
-    plt.plot(time_array_decay,signal_df.mean(axis=1), linewidth=8, color = 'navy')
-    
-    if run_spline_fit == True:
-        spl = UnivariateSpline(time_array_decay,signal_df.mean(axis=1),k=2, s=3)
-        plt.plot(time_array_decay,spl(time_array_decay),linewidth=2, color ='red')
-        cutpoint =np.absolute(np.gradient(spl(time_array_decay))-0).argmin()
-        plt.axvline(x= cutpoint*0.2 , color = 'b',linestyle ='--')
-        mean = signal_df.mean(axis=1)
-        tau = np.around(np.absolute(mean[0:cutpoint]-mean[0]*0.632).argmin()*0.2, decimals=2)
-        stable_mean = np.around(np.mean(mean[cutpoint:]),decimals=2)
-        plt.title(f"Bump amplitude over {decay_length_s}s of stop {celltype, trial_condition}, \n Average decay by {average_signal}%, decay period tau = {tau}s, stable period avaerage = {stable_mean} ",fontsize =20)
-    else:
-        plt.title(f"Bump amplitude over {decay_length_s}s of stop {celltype, trial_condition}, \n Average decay by {average_signal}%",fontsize =20)
-        
-    
-    plt.xticks(ticks=plt.xticks()[0][0:], labels=np.array(plt.xticks()[0][0:]-active_period_length_s, dtype=np.int64), fontsize=15)
-    plt.yticks(fontsize=15)
-    plt.xlim(0,decay_length_s+0.8)
-    plt.axvline(x= active_period_length_s, color = 'r',linestyle ='--')
-    plt.xlabel('Time(s)', fontsize=20)
-    plt.ylabel('Bump Amplitude', fontsize=20)
+        plt.title(
+            f"Bump amplitude over {decay_length_s}s of stop ({celltype}, {trial_condition})\n"
+            f"Average decay {average_signal}%",
+            fontsize=16
+        )
+
+    # x-axis labeling: show time relative to stop onset (shifted by active period)
+    # choose nice tick spacing ~1s
+    xticks = np.arange(0, decay_length_s + bin_dt*0.5, 1.0)
+    xlabels = (xticks - active_period_length_s).astype(int)
+    plt.xticks(xticks, xlabels, fontsize=12)
+
+    plt.yticks(fontsize=12)
+    plt.xlim(0, decay_length_s + bin_dt * 4)
+    plt.axvline(x=active_period_length_s, linestyle='--')
+    plt.xlabel('Time from stop onset (s)', fontsize=14)
+    plt.ylabel('Bump Amplitude', fontsize=14)
+    plt.tight_layout()
     plt.show()
+
 
 
     
@@ -1270,61 +1355,7 @@ def get_PVA_angle_and_forwared_speed_during_stop(PVA_angle_array, speed_array,pe
     return difference_during_stop, forward_speed_during_stop
         
 
-    
-    
-    
-    
-    
-# Sliding window function for circular variance
-def sliding_window_circular_variance(offset_array, behavior_state, strength_array, window_size, time_per_frame,step_size_frames):
-    variances = []
-    num_frames = len(offset_array)
-    
-    # Convert window size and step size from seconds to frames 
-    window_size_frames =  int(np.ceil(window_size/time_per_frame))
-    
-    
-    # Calculate the mean and standard deviation of the strength array
-    mean_strength = np.mean(strength_array)
-    std_strength = np.std(strength_array)
-    
-    # Define the threshold for low strength (one SD below the mean)
-    strength_threshold = mean_strength - std_strength
-    
-    
-    # Slide over the data
-    for start in range(0, num_frames - window_size_frames + 1, step_size_frames):
-        end = start + window_size_frames
-        
-        # Get the circular data in the current window
-        offset_window = offset_array[start:end]
-        
-        # Get the behavior state in the current window
-        behavior_window = behavior_state[start:end]
-        
-        # Get the strength data in the current window
-        strength_window = strength_array[start:end]
-        
-        # Calculate the proportion of walking frames (assuming 1 = walking, 0 = stopping)
-        walking_ratio = np.sum(behavior_window == 1) / len(behavior_window)
-        
-        # Calculate the average strength in the window
-        avg_strength = np.mean(strength_window)
-        
-        # Drop window if majority of frames are in stopping period
-        if walking_ratio < 0.7 or avg_strength < strength_threshold:
-            continue  # Skip this window
-        
-        # Calculate circular variance in the current window
-        variance = circvar(offset_window,high=np.pi, low= -np.pi)
-        variances.append(variance)
-    
-    return variances    
-    
-    
-
-    
-    
+     
 
     
     
@@ -1604,11 +1635,379 @@ def plot_stop_drift_rate_heatmaps(data_all, data_key):
 
 
 
+#This function is specifically used for analyze how bump amplitude/PVA strength changed during continous stop 
+def extract_signal_during_entire_stop(directory, dual_imaging, Bump_amplitude_stopping_duration, separate_bridge):
+    """
+    Analyze how bump amplitude / PVA strength change during continuous stops.
+    Returns a dict of DataFrames and lists as initialized below.
+    """
+    count = 0
+    stop_signal_pooled = {}
 
+    # Init containers
+    if separate_bridge:
+        stop_signal_pooled['bump_amplitude_PVA_left_bridge'] = pd.DataFrame()
+        stop_signal_pooled['bump_amplitude_PVA_right_bridge'] = pd.DataFrame()
+        stop_signal_pooled['bump_amplitude_opposite_left_bridge'] = pd.DataFrame()
+        stop_signal_pooled['bump_amplitude_opposite_right_bridge'] = pd.DataFrame()
+        stop_signal_pooled['bump_amplitude_max_min_left_bridge'] = pd.DataFrame()
+        stop_signal_pooled['bump_amplitude_max_min_right_bridge'] = pd.DataFrame()
+        stop_signal_pooled['bump_amplitude_two_max_avg_left_bridge'] = pd.DataFrame()
+        stop_signal_pooled['bump_amplitude_two_max_avg_right_bridge'] = pd.DataFrame()
+        stop_signal_pooled['PVA_strength_left_bridge'] = pd.DataFrame()
+        stop_signal_pooled['PVA_strength_right_bridge'] = pd.DataFrame()
+        stop_signal_pooled['PVA_strength_normalized_left_bridge'] = pd.DataFrame()
+        stop_signal_pooled['PVA_strength_normalized_right_bridge'] = pd.DataFrame()
+        stop_signal_pooled['Angular_Speed_stop_left'] = pd.DataFrame()
+        stop_signal_pooled['Angular_Speed_stop_right'] = pd.DataFrame()
+        stop_signal_pooled['FlyTrial_info_qualified_stop_left'] = []
+        stop_signal_pooled['FlyTrial_info_qualified_stop_right'] = []
+    else:
+        stop_signal_pooled['bump_amplitude_PVA'] = pd.DataFrame()
+        stop_signal_pooled['bump_amplitude_opposite'] = pd.DataFrame()
+        stop_signal_pooled['bump_amplitude_max_min'] = pd.DataFrame()
+        stop_signal_pooled['bump_amplitude_two_max_avg'] = pd.DataFrame()
+        stop_signal_pooled['PVA_strength'] = pd.DataFrame()
+        stop_signal_pooled['PVA_strength_normalized'] = pd.DataFrame()
+        stop_signal_pooled['Angular_Speed_stop'] = pd.DataFrame()
+        stop_signal_pooled['FlyTrial_info_qualified_stop'] = []
+
+    # Iterate files
+    for single_df in os.listdir(directory):
+        if not single_df.lower().endswith(".csv"):
+            continue
+
+        current_file = pd.read_csv(os.path.join(directory, single_df))
+
+        # Time info
+        volume_cycle = len(current_file)
+        volume_time = current_file['Time_Stamp'][1]  # assumes this is Δt
+        volume_rate = 1 / volume_time
+        time_array_imaging = np.arange(volume_cycle) / volume_rate
+
+        Angular_velocity = current_file['Angular_Velocity'].values
+        Angular_speed_degrees = np.abs(Angular_velocity) * 180 / np.pi
+        Unwrapped_heading = current_file['Unwrapped_Bar_Position/Heading'].values
+        Wrapped_heading = current_file['Bar_Position/Heading'].values
+
+        persistence_stop_index_and_length = find_stop_period_on_heading(
+            head_velocity_array=Angular_velocity,
+            degree_of_tolerance=15,
+            shortest_stopFrame=int(np.ceil(3 / volume_time))
+        )
+
+        bump_amplitude_stopping_duration = Bump_amplitude_stopping_duration
+        bump_amplitude_stopping_bin_size = 0.2  # 200 ms bins
+        stable_PVA_threshold = 67.5
+        active_period_before_len = 1
+
+        if separate_bridge:
+            # ----- split bridges -----
+            columns_left = [f'Raw_F_{i}' for i in range(1, 9)]
+            columns_right = [f'Raw_F_{i}' for i in range(9, 17)]
+
+            raw_data_left_ROI = np.column_stack([current_file[col].to_numpy() for col in columns_left])
+            raw_data_right_ROI = np.column_stack([current_file[col].to_numpy() for col in columns_right])
+
+            z_score_data_left_bridge = zscore(raw_data_left_ROI, axis=0, nan_policy='omit')
+            z_score_data_right_bridge = zscore(raw_data_right_ROI, axis=0, nan_policy='omit')
+
+            # PVA (angles in rad; strength in [0,1]) using "contrast" on z-scored input
+            PVA_left_bridge,  PVA_left_bridge_strength_normalize  = PVA_radian_calcul_norm(z_score_data_left_bridge,  volume_cycle, 8, norm="contrast")
+            PVA_right_bridge, PVA_right_bridge_strength_normalize = PVA_radian_calcul_norm(z_score_data_right_bridge, volume_cycle, 8, norm="contrast")
+
+           
+            PVA_radian_array_z_left, PVA_strength_z_scored_left = PVA_radian_calcul(z_score_data_left_bridge, volume_cycle, 8)
+            PVA_radian_array_z_right, PVA_strength_z_scored_right = PVA_radian_calcul(z_score_data_right_bridge, volume_cycle, 8)
+
+            PVA_angle_Array_left  = PVA_radian_to_angle(PVA_left_bridge)
+            PVA_angle_Array_right = PVA_radian_to_angle(PVA_right_bridge)
+
+            # Bump amplitude flavors
+            Bump_amplitude_PVA_left,  Bump_amplitude_PVA_opposite_left  = calcualteBumpAmplitude_V3(z_score_data_left_bridge,  PVA_left_bridge)
+            Bump_amplitude_PVA_right, Bump_amplitude_PVA_opposite_right = calcualteBumpAmplitude_V3(z_score_data_right_bridge, PVA_right_bridge)
+
+            Bump_amplitude_max_min_left  = calcualteBumpAmplitude(z_score_data_left_bridge)
+            Bump_amplitude_max_min_right = calcualteBumpAmplitude(z_score_data_right_bridge)
+
+            Bump_amplitude_two_max_average_left  = calcualteBumpAmplitude_V2_green(z_score_data_left_bridge)
+            Bump_amplitude_two_max_average_right = calcualteBumpAmplitude_V2_green(z_score_data_right_bridge)
+
+            # Qualify stops (per bridge)
+            qualified_stopping_index_and_length_left,  _ = find_qualified_stopping_period(
+                volume_time=volume_time,
+                stopping_array=persistence_stop_index_and_length,
+                PVAinAngle=PVA_angle_Array_left,
+                minimum_frame_length=int(np.ceil(bump_amplitude_stopping_duration / volume_time)),
+                stable_PVA_threshold=stable_PVA_threshold
+            )
+            qualified_stopping_index_and_length_right, _ = find_qualified_stopping_period(
+                volume_time=volume_time,
+                stopping_array=persistence_stop_index_and_length,
+                PVAinAngle=PVA_angle_Array_right,
+                minimum_frame_length=int(np.ceil(bump_amplitude_stopping_duration / volume_time)),
+                stable_PVA_threshold=stable_PVA_threshold
+            )
+
+            # Extract time-binned stop profiles (left)
+            stopping_period_PVA_strength_left_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=PVA_strength_z_scored_left,
+                qualified_stop_array=qualified_stopping_index_and_length_left,
+                active_period_before_len=active_period_before_len
+            )
+            stopping_period_PVA_strength_normalized_left_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=PVA_left_bridge_strength_normalize,
+                qualified_stop_array=qualified_stopping_index_and_length_left,
+                active_period_before_len=active_period_before_len
+            )
+            bump_amplitude_PVA_stopping_left_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Bump_amplitude_PVA_left,
+                qualified_stop_array=qualified_stopping_index_and_length_left,
+                active_period_before_len=active_period_before_len
+            )
+            bump_amplitude_PVA_opposite_stopping_left_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Bump_amplitude_PVA_opposite_left,
+                qualified_stop_array=qualified_stopping_index_and_length_left,
+                active_period_before_len=active_period_before_len
+            )
+            bump_amplitude_max_min_stopping_left_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Bump_amplitude_max_min_left,
+                qualified_stop_array=qualified_stopping_index_and_length_left,
+                active_period_before_len=active_period_before_len
+            )
+            bump_amplitude_two_max_average_stopping_left_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Bump_amplitude_two_max_average_left,
+                qualified_stop_array=qualified_stopping_index_and_length_left,
+                active_period_before_len=active_period_before_len
+            )
+            Angular_speed_left_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Angular_speed_degrees,
+                qualified_stop_array=qualified_stopping_index_and_length_left,
+                active_period_before_len=active_period_before_len
+            )
+
+            # Extract time-binned stop profiles (right)
+            stopping_period_PVA_strength_right_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=PVA_strength_z_scored_right,
+                qualified_stop_array=qualified_stopping_index_and_length_right,
+                active_period_before_len=active_period_before_len
+            )
+            stopping_period_PVA_strength_normalized_right_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=PVA_right_bridge_strength_normalize,
+                qualified_stop_array=qualified_stopping_index_and_length_right,
+                active_period_before_len=active_period_before_len
+            )
+            bump_amplitude_PVA_stopping_right_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Bump_amplitude_PVA_right,
+                qualified_stop_array=qualified_stopping_index_and_length_right,
+                active_period_before_len=active_period_before_len
+            )
+            bump_amplitude_PVA_opposite_stopping_right_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Bump_amplitude_PVA_opposite_right,
+                qualified_stop_array=qualified_stopping_index_and_length_right,
+                active_period_before_len=active_period_before_len
+            )
+            bump_amplitude_max_min_stopping_right_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Bump_amplitude_max_min_right,
+                qualified_stop_array=qualified_stopping_index_and_length_right,
+                active_period_before_len=active_period_before_len
+            )
+            bump_amplitude_two_max_average_stopping_right_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Bump_amplitude_two_max_average_right,
+                qualified_stop_array=qualified_stopping_index_and_length_right,
+                active_period_before_len=active_period_before_len
+            )
+            Angular_speed_right_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Angular_speed_degrees,
+                qualified_stop_array=qualified_stopping_index_and_length_right,
+                active_period_before_len=active_period_before_len
+            )
+
+            # Wrap as DataFrames (transpose so rows=bins, cols=episodes)
+            stopping_period_PVA_strength_left_current              = pd.DataFrame(stopping_period_PVA_strength_left_current.T)
+            stopping_period_PVA_strength_left_normalized_current   = pd.DataFrame(stopping_period_PVA_strength_normalized_left_current.T)
+            stopping_period_bump_amp_PVA_left_current              = pd.DataFrame(bump_amplitude_PVA_stopping_left_current.T)
+            stopping_period_bump_amp_PVA_opposite_left_current     = pd.DataFrame(bump_amplitude_PVA_opposite_stopping_left_current.T)
+            stopping_period_bump_amp_max_min_left_current          = pd.DataFrame(bump_amplitude_max_min_stopping_left_current.T)
+            stopping_period_bump_amp_two_max_average_left_current  = pd.DataFrame(bump_amplitude_two_max_average_stopping_left_current.T)
+            Angular_speed_left_current                             = pd.DataFrame(Angular_speed_left_current.T)
+
+            stopping_period_PVA_strength_right_current             = pd.DataFrame(stopping_period_PVA_strength_right_current.T)
+            stopping_period_PVA_strength_right_normalized_current  = pd.DataFrame(stopping_period_PVA_strength_normalized_right_current.T)
+            stopping_period_bump_amp_PVA_right_current             = pd.DataFrame(bump_amplitude_PVA_stopping_right_current.T)
+            stopping_period_bump_amp_PVA_opposite_right_current    = pd.DataFrame(bump_amplitude_PVA_opposite_stopping_right_current.T)
+            stopping_period_bump_amp_max_min_right_current         = pd.DataFrame(bump_amplitude_max_min_stopping_right_current.T)
+            stopping_period_bump_amp_two_max_average_right_current = pd.DataFrame(bump_amplitude_two_max_average_stopping_right_current.T)
+            Angular_speed_right_current                            = pd.DataFrame(Angular_speed_right_current.T)
+
+            # Fly info
+            single_trial_info = single_df.split("-")
+            fly_id = single_trial_info[0]
+
+            # In case some trials do not have stops, count columns present
+            for _ in range(stopping_period_bump_amp_max_min_left_current.shape[1]):
+                stop_signal_pooled['FlyTrial_info_qualified_stop_left'].append(fly_id)
+            for _ in range(stopping_period_bump_amp_max_min_right_current.shape[1]):
+                stop_signal_pooled['FlyTrial_info_qualified_stop_right'].append(fly_id)
+
+            # Store / append
+            if count == 0:
+                stop_signal_pooled['bump_amplitude_PVA_left_bridge']           = stopping_period_bump_amp_PVA_left_current
+                stop_signal_pooled['bump_amplitude_opposite_left_bridge']      = stopping_period_bump_amp_PVA_opposite_left_current
+                stop_signal_pooled['bump_amplitude_max_min_left_bridge']       = stopping_period_bump_amp_max_min_left_current
+                stop_signal_pooled['bump_amplitude_two_max_avg_left_bridge']   = stopping_period_bump_amp_two_max_average_left_current
+                stop_signal_pooled['PVA_strength_left_bridge']                 = stopping_period_PVA_strength_left_current
+                stop_signal_pooled['PVA_strength_normalized_left_bridge']      = stopping_period_PVA_strength_left_normalized_current
+                stop_signal_pooled['Angular_Speed_stop_left']                  = Angular_speed_left_current
+
+                stop_signal_pooled['bump_amplitude_PVA_right_bridge']          = stopping_period_bump_amp_PVA_right_current
+                stop_signal_pooled['bump_amplitude_opposite_right_bridge']     = stopping_period_bump_amp_PVA_opposite_right_current
+                stop_signal_pooled['bump_amplitude_max_min_right_bridge']      = stopping_period_bump_amp_max_min_right_current
+                stop_signal_pooled['bump_amplitude_two_max_avg_right_bridge']  = stopping_period_bump_amp_two_max_average_right_current
+                stop_signal_pooled['PVA_strength_right_bridge']                = stopping_period_PVA_strength_right_current
+                stop_signal_pooled['PVA_strength_normalized_right_bridge']     = stopping_period_PVA_strength_right_normalized_current
+                stop_signal_pooled['Angular_Speed_stop_right']                 = Angular_speed_right_current
+            else:
+                # NOTE: axis=1, no ignore_index with pandas
+                stop_signal_pooled['bump_amplitude_PVA_left_bridge']           = pd.concat([stop_signal_pooled['bump_amplitude_PVA_left_bridge'],          stopping_period_bump_amp_PVA_left_current],          axis=1)
+                stop_signal_pooled['bump_amplitude_opposite_left_bridge']      = pd.concat([stop_signal_pooled['bump_amplitude_opposite_left_bridge'],     stopping_period_bump_amp_PVA_opposite_left_current], axis=1)
+                stop_signal_pooled['bump_amplitude_max_min_left_bridge']       = pd.concat([stop_signal_pooled['bump_amplitude_max_min_left_bridge'],      stopping_period_bump_amp_max_min_left_current],      axis=1)
+                stop_signal_pooled['bump_amplitude_two_max_avg_left_bridge']   = pd.concat([stop_signal_pooled['bump_amplitude_two_max_avg_left_bridge'],  stopping_period_bump_amp_two_max_average_left_current], axis=1)
+                stop_signal_pooled['PVA_strength_left_bridge']                 = pd.concat([stop_signal_pooled['PVA_strength_left_bridge'],                stopping_period_PVA_strength_left_current],          axis=1)
+                stop_signal_pooled['PVA_strength_normalized_left_bridge']      = pd.concat([stop_signal_pooled['PVA_strength_normalized_left_bridge'],     stopping_period_PVA_strength_left_normalized_current], axis=1)
+                stop_signal_pooled['Angular_Speed_stop_left']                  = pd.concat([stop_signal_pooled['Angular_Speed_stop_left'],                 Angular_speed_left_current],                         axis=1)
+
+                stop_signal_pooled['bump_amplitude_PVA_right_bridge']          = pd.concat([stop_signal_pooled['bump_amplitude_PVA_right_bridge'],         stopping_period_bump_amp_PVA_right_current],         axis=1)
+                stop_signal_pooled['bump_amplitude_opposite_right_bridge']     = pd.concat([stop_signal_pooled['bump_amplitude_opposite_right_bridge'],    stopping_period_bump_amp_PVA_opposite_right_current], axis=1)
+                stop_signal_pooled['bump_amplitude_max_min_right_bridge']      = pd.concat([stop_signal_pooled['bump_amplitude_max_min_right_bridge'],     stopping_period_bump_amp_max_min_right_current],     axis=1)
+                stop_signal_pooled['bump_amplitude_two_max_avg_right_bridge']  = pd.concat([stop_signal_pooled['bump_amplitude_two_max_avg_right_bridge'], stopping_period_bump_amp_two_max_average_right_current], axis=1)
+                stop_signal_pooled['PVA_strength_right_bridge']                = pd.concat([stop_signal_pooled['PVA_strength_right_bridge'],               stopping_period_PVA_strength_right_current],         axis=1)
+                stop_signal_pooled['PVA_strength_normalized_right_bridge']     = pd.concat([stop_signal_pooled['PVA_strength_normalized_right_bridge'],    stopping_period_PVA_strength_right_normalized_current], axis=1)
+                stop_signal_pooled['Angular_Speed_stop_right']                 = pd.concat([stop_signal_pooled['Angular_Speed_stop_right'],                Angular_speed_right_current],                        axis=1)
+
+            count += 1
+
+        else:
+            # ----- single bridge / combined -----
+            columns = [f'F_Roi_{i}' for i in range(1, 9)]  
+            raw_data = np.column_stack([current_file[col].to_numpy() for col in columns])
+
+            z_score_data = zscore(raw_data, axis=0, nan_policy='omit')
+
+            PVA, PVA_strength_normalize = PVA_radian_calcul_norm(z_score_data, volume_cycle, 8, norm="contrast")
+            PVA_radian_array_z, PVA_strength_z_scored = PVA_radian_calcul(Z_score_array_8_roi, volume_cycle, 8)
+            PVA_angle_Array = PVA_radian_to_angle(PVA)
+
+            Bump_amplitude_PVA, Bump_amplitude_PVA_opposite = calcualteBumpAmplitude_V3(z_score_data, PVA)
+            Bump_amplitude_max_min = calcualteBumpAmplitude(z_score_data)
+            Bump_amplitude_two_max_average = calcualteBumpAmplitude_V2_green(z_score_data)
+
+            qualified_stopping_index_and_length, _ = find_qualified_stopping_period(
+                volume_time=volume_time,
+                stopping_array=persistence_stop_index_and_length,
+                PVAinAngle=PVA_angle_Array,
+                minimum_frame_length=int(np.ceil(bump_amplitude_stopping_duration / volume_time)),
+                stable_PVA_threshold=stable_PVA_threshold
+            )
+
+            stopping_period_PVA_strength_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=PVA_strength_z_scored,
+                qualified_stop_array=qualified_stopping_index_and_length,
+                active_period_before_len=active_period_before_len
+            )
+            stopping_period_PVA_strength_normalized_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=PVA_strength_normalize,
+                qualified_stop_array=qualified_stopping_index_and_length,
+                active_period_before_len=active_period_before_len
+            )
+            bump_amplitude_PVA_stopping_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Bump_amplitude_PVA,
+                qualified_stop_array=qualified_stopping_index_and_length,
+                active_period_before_len=active_period_before_len
+            )
+            bump_amplitude_PVA_opposite_stopping_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Bump_amplitude_PVA_opposite,
+                qualified_stop_array=qualified_stopping_index_and_length,
+                active_period_before_len=active_period_before_len
+            )
+            bump_amplitude_max_min_stopping_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Bump_amplitude_max_min,
+                qualified_stop_array=qualified_stopping_index_and_length,
+                active_period_before_len=active_period_before_len
+            )
+            bump_amplitude_two_max_average_stopping_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Bump_amplitude_two_max_average,
+                qualified_stop_array=qualified_stopping_index_and_length,
+                active_period_before_len=active_period_before_len
+            )
+            Angular_speed_current = stopping_period_signal_decay(
+                volume_time, bump_amplitude_stopping_duration, bump_amplitude_stopping_bin_size,
+                signal_array=Angular_speed_degrees,
+                qualified_stop_array=qualified_stopping_index_and_length,
+                active_period_before_len=active_period_before_len
+            )
+
+            # DataFrames
+            stopping_period_PVA_strength_current             = pd.DataFrame(stopping_period_PVA_strength_current.T)
+            stopping_period_PVA_strength_normalized_current  = pd.DataFrame(stopping_period_PVA_strength_normalized_current.T)
+            stopping_period_bump_amp_PVA_current             = pd.DataFrame(bump_amplitude_PVA_stopping_current.T)
+            stopping_period_bump_amp_PVA_opposite_current    = pd.DataFrame(bump_amplitude_PVA_opposite_stopping_current.T)
+            stopping_period_bump_amp_max_min_current         = pd.DataFrame(bump_amplitude_max_min_stopping_current.T)
+            stopping_period_bump_amp_two_max_average_current = pd.DataFrame(bump_amplitude_two_max_average_stopping_current.T)
+            Angular_speed_current                            = pd.DataFrame(Angular_speed_current.T)
+
+            # Fly info
+            single_trial_info = single_df.split("-")
+            fly_id = single_trial_info[0]
+            for _ in range(stopping_period_bump_amp_max_min_current.shape[1]):
+                stop_signal_pooled['FlyTrial_info_qualified_stop'].append(fly_id)
+
+            # Store / append
+            if count == 0:
+                stop_signal_pooled['bump_amplitude_PVA']          = stopping_period_bump_amp_PVA_current
+                stop_signal_pooled['bump_amplitude_opposite']     = stopping_period_bump_amp_PVA_opposite_current
+                stop_signal_pooled['bump_amplitude_max_min']      = stopping_period_bump_amp_max_min_current
+                stop_signal_pooled['bump_amplitude_two_max_avg']  = stopping_period_bump_amp_two_max_average_current
+                stop_signal_pooled['PVA_strength']                = stopping_period_PVA_strength_current
+                stop_signal_pooled['PVA_strength_normalized']     = stopping_period_PVA_strength_normalized_current
+                stop_signal_pooled['Angular_Speed_stop']          = Angular_speed_current
+            else:
+                stop_signal_pooled['bump_amplitude_PVA']          = pd.concat([stop_signal_pooled['bump_amplitude_PVA'],          stopping_period_bump_amp_PVA_current],          axis=1)
+                stop_signal_pooled['bump_amplitude_opposite']     = pd.concat([stop_signal_pooled['bump_amplitude_opposite'],     stopping_period_bump_amp_PVA_opposite_current], axis=1)
+                stop_signal_pooled['bump_amplitude_max_min']      = pd.concat([stop_signal_pooled['bump_amplitude_max_min'],      stopping_period_bump_amp_max_min_current],      axis=1)
+                stop_signal_pooled['bump_amplitude_two_max_avg']  = pd.concat([stop_signal_pooled['bump_amplitude_two_max_avg'],  stopping_period_bump_amp_two_max_average_current], axis=1)
+                stop_signal_pooled['PVA_strength']                = pd.concat([stop_signal_pooled['PVA_strength'],                stopping_period_PVA_strength_current],          axis=1)
+                stop_signal_pooled['PVA_strength_normalized']     = pd.concat([stop_signal_pooled['PVA_strength_normalized'],     stopping_period_PVA_strength_normalized_current], axis=1)
+                stop_signal_pooled['Angular_Speed_stop']          = pd.concat([stop_signal_pooled['Angular_Speed_stop'],          Angular_speed_current],                         axis=1)
+
+            count += 1
+
+    return stop_signal_pooled
 
 
 
 def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genotype,trial_condition,Bump_amplitude_stopping_duration,ROI_type):
+
     
     
     # Part 1: Create and add each DataFrame to the dictionary
@@ -1617,7 +2016,6 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
     output_pooled_dictionary['output_df_pooled'] = pd.DataFrame()
     output_pooled_dictionary['output_bump_amplitude_V3_pooled'] = pd.DataFrame()
     output_pooled_dictionary['output_bump_amplitude_V4_pooled'] = pd.DataFrame()
-    output_pooled_dictionary['output_bump_width_pooled'] = pd.DataFrame()
     output_pooled_dictionary['output_PVA_strength_pooled'] = pd.DataFrame()
     output_pooled_dictionary['output_Angular_Speed_pooled'] = pd.DataFrame()
     output_pooled_dictionary['strong_PVA_chunk_pooled'] = []
@@ -1625,17 +2023,6 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
     output_pooled_dictionary['PVA_at_strong_signal'] = []
     output_pooled_dictionary['mean_PVA_strength_per_trial_pooled'] = []
     output_pooled_dictionary['output_stable_PVA_index_pooled'] = []
-    output_pooled_dictionary['circular_variance'] = []
-    output_pooled_dictionary['circular_variance_slide_window_during_walking'] = []
-    output_pooled_dictionary['Average_bump_shape'] = pd.DataFrame()
-    output_pooled_dictionary['Average_bump_shape_strong_PVA'] = pd.DataFrame()
-    output_pooled_dictionary['Bump_shape_at_stop'] = pd.DataFrame()
-    output_pooled_dictionary['Bump_shape_at_stop_more_than_10s_trial_only'] = pd.DataFrame()
-    output_pooled_dictionary['Bump_shape_at_5s_after_stop'] = pd.DataFrame()
-    output_pooled_dictionary['Bump_shape_at_10s_after_stop'] = pd.DataFrame()
-    output_pooled_dictionary['Bump_shape_at_20s_after_stop'] = pd.DataFrame()
-    output_pooled_dictionary['max_Raw_F_at_stop'] = []
-    output_pooled_dictionary['max_Raw_F_at_10s_after_stop'] = []
     output_pooled_dictionary['output_flytrial'] = []
     output_pooled_dictionary['output_flytrial_for_qualified_stop'] = []
     output_pooled_dictionary['output_second_wise_bump_drift'] = {}
@@ -1651,22 +2038,24 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
     output_pooled_dictionary['output_second_wise_absolute_bump_drift'] = {}
     output_pooled_dictionary['output_second_wise_bump_dwell_difference'] = {}
     output_pooled_dictionary['output_second_wise_PVA_strength'] = {}
-    output_pooled_dictionary['output_PVA_heading_offset'] = {}
+    output_pooled_dictionary['output_second_wise_PVA_strength_norm'] = {}
     output_pooled_dictionary['PVA_at_strong_signal'] = {}
     output_pooled_dictionary['dff_8_roi_at_stop'] = {}
     output_pooled_dictionary['PVA_strength_frame_wise_at_stop'] = {}
     output_pooled_dictionary['PVA_Angle_frame_wise_at_stop'] = {}
+    output_pooled_dictionary['dff_8_roi_5s_before_stop'] = {}
+    output_pooled_dictionary['PVA_strength_frame_wise_5s_before_stop'] = {}
+    output_pooled_dictionary['PVA_Angle_frame_wise_5s_before_stop'] = {}
+    output_pooled_dictionary['Frame_time'] = {}
     
     if dual_imaging == 1:
         output_pooled_dictionary['output_df_pooled_red'] = pd.DataFrame()
         output_pooled_dictionary['output_bump_amplitude_V3_pooled_red'] = pd.DataFrame()
         output_pooled_dictionary['output_bump_amplitude_V4_pooled_red'] = pd.DataFrame()
-        output_pooled_dictionary['output_bump_width_pooled_red'] = pd.DataFrame()
         output_pooled_dictionary['output_PVA_strength_pooled_red'] = pd.DataFrame()
         output_pooled_dictionary['output_stable_PVA_index_pooled_red'] = []
         output_pooled_dictionary['strong_PVA_chunk_pooled_red'] = []
         output_pooled_dictionary['mean_PVA_strength_per_trial_pooled_red'] = []
-        output_pooled_dictionary['circular_variance_red']
         output_pooled_dictionary['output_lag_s'] = []
   
     
@@ -1709,29 +2098,11 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
     
         dff_normalized_8_roi = np.array([current_file[f'dFF_Roi_{i}'] for i in range(1, 9)]).T
         columns = ['dFF_Roi_5', 'dFF_Roi_6', 'dFF_Roi_7', 'dFF_Roi_8', 'dFF_Roi_1', 'dFF_Roi_2', 'dFF_Roi_3', 'dFF_Roi_4']
+        PVA_norm,  PVA_strength_norm  = PVA_radian_calcul_norm(dff_normalized_8_roi,  volume_cycle, 8, norm="contrast")
         data = [current_file[col].to_numpy() for col in columns]
         dff_normalized_8_roi_shifted = np.column_stack(data)
         dff_normalized_8_roi_shifted = dff_normalized_8_roi_shifted.transpose()
         
-        # array for 16 ROIs (specific for bump width analysis)
-        #raw_f_16_roi = np.array([current_file[f'Raw_F_{i}'] for i in range(1, 17)]).T
-        #For E-PG/P-EG,P-ENb PB type ROI
-        if ROI_type == 1: 
-            columns = ['Raw_F_5', 'Raw_F_14', 'Raw_F_6', 'Raw_F_15', 'Raw_F_7', 'Raw_F_16','Raw_F_8','Raw_F_9','Raw_F_1','Raw_F_10','Raw_F_2','Raw_F_11','Raw_F_3','Raw_F_12','Raw_F_4', 'Raw_F_13']
-        #For delta7 type ROI
-        elif ROI_type == 2:
-            columns = ['Raw_F_5', 'Raw_F_13', 'Raw_F_6', 'Raw_F_14', 'Raw_F_7', 'Raw_F_15', 'Raw_F_8', 'Raw_F_16','Raw_F_1','Raw_F_9','Raw_F_2','Raw_F_10','Raw_F_3','Raw_F_11','Raw_F_4','Raw_F_12']
-        # For EB ROI: 
-        else:
-            columns = ['Raw_F_1', 'Raw_F_2', 'Raw_F_3', 'Raw_F_4', 'Raw_F_5', 'Raw_F_6', 'Raw_F_7', 'Raw_F_8','Raw_F_9','Raw_F_10','Raw_F_11','Raw_F_12','Raw_F_13','Raw_F_14','Raw_F_15','Raw_F_16']
-        raw_data_16_ROI = [current_file[col].to_numpy() for col in columns]
-        raw_data_16_ROI = np.array(raw_data_16_ROI).T
-        dff_16_roi = get_dff_array(raw_F_array = raw_data_16_ROI, ROI_num = 16, F_zero_cutoff = 0.05, if_plot =0)
-        dff_normalized_16_roi = normalizing_dff_array(dff_16_roi,ROI_num= 16, normalize_cutoff= 0.95,if_plot =0)
-        dff_normalized_16_roi_shifted = np.column_stack(dff_normalized_16_roi)
-        #dff_normalized_16_roi_shifted = dff_normalized_16_roi_shifted.transpose()
-        
-        raw_F_max = np.max(raw_data_16_ROI,axis =1)
         
         
         
@@ -1749,7 +2120,7 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         Forward_speed_degrees =Forward_speed_radian * 180/np.pi
         Angular_speed_degrees =  np.abs(Angular_velocity) * 180/np.pi
         #Get persistence period
-        persistence_stop_index_and_length = find_stop_period_on_heading(head_velocity_array = Angular_velocity,degree_of_tolerance =5,shortest_stopFrame=int(np.ceil(3/volume_time)))
+        persistence_stop_index_and_length = find_stop_period_on_heading(head_velocity_array = Angular_velocity,degree_of_tolerance =15,shortest_stopFrame=int(np.ceil(3/volume_time)))
         
         #Create a index array that indicates whether the current frame is stop/active stop index = 0, active index =1
         behavior_state_frame_index = np.ones(len(PVA_Radian))
@@ -1760,39 +2131,6 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
             behavior_state_frame_index[start_index:end_index+1] = [0] * currrent_stop_duration
     
         
-      
-    
-        #Average bump shape peak centered
-        df_dff_in_ROI_normalized_shifted_peak_centered = np.zeros((len(dff_normalized_16_roi_shifted),       len(dff_normalized_16_roi_shifted[0])))
-
-        shifted_by_all = []
-
-        for i in range(len(dff_normalized_16_roi_shifted[0])):
-            original_order = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
-            current_peak = np.argmax(dff_normalized_16_roi_shifted[:,i])
-            shift_by = current_peak - 8
-            shifted_order = original_order[shift_by % len(original_order):] + original_order[:shift_by % len(original_order)]
-            df_dff_in_ROI_normalized_shifted_peak_centered[:,i] = dff_normalized_16_roi_shifted[shifted_order,i]
-            shifted_by_all.append(shift_by)
-    
-        average_bump_shape = np.mean(df_dff_in_ROI_normalized_shifted_peak_centered, axis=1)
-        
-        
-        
-        #Same thing for 8 ROIs
-        df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI = np.zeros((len(dff_normalized_8_roi_shifted),       len(dff_normalized_8_roi_shifted[0])))
-        shifted_by_all_8_ROI = []
-        
-        for i in range(len(dff_normalized_8_roi_shifted[0])):
-            original_order = [0,1,2,3,4,5,6,7]
-            current_peak = np.argmax(dff_normalized_8_roi_shifted[:,i])
-            shift_by = current_peak - 3
-            shifted_order = original_order[shift_by % len(original_order):] + original_order[:shift_by % len(original_order)]
-            df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI[:,i] = dff_normalized_8_roi_shifted[shifted_order,i]
-            shifted_by_all_8_ROI.append(shift_by)
-    
-        average_bump_shape_8_ROI = np.mean(df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI, axis=1)
-        average_bump_shape_8_ROI =pd.DataFrame(average_bump_shape_8_ROI)
     
     
     
@@ -1812,9 +2150,9 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         ##Part3: get signal during the stopping period
         
         #3.0 Get frame_wise signal of dff during the stop
-        dff_8_roi_at_stop_current = extract_signal_during_stop(persistence_stop_index_and_length, dff_normalized_8_roi.T)
-        PVA_strength_at_stop_frame_wise_current = extract_signal_during_stop(persistence_stop_index_and_length, PVA_strength)
-        PVA_Angle_at_stop_frame_wise_current = extract_signal_during_stop(persistence_stop_index_and_length, PVA_Angle)
+        dff_8_roi_at_stop_current,dff_8_roi_before_stop_current = extract_signal_during_stop_and_before(persistence_stop_index_and_length, dff_normalized_8_roi.T,volume_time)
+        PVA_strength_at_stop_frame_wise_current,PVA_strength_before_stop_frame_wise_current = extract_signal_during_stop_and_before(persistence_stop_index_and_length, PVA_strength,volume_time)
+        PVA_Angle_at_stop_frame_wise_current,PVA_Angle_before_stop_frame_wise_current = extract_signal_during_stop_and_before(persistence_stop_index_and_length, PVA_Angle,volume_time)
         
     
         # 3.1:Calculate annd plot difference throughout the stop period
@@ -1847,14 +2185,10 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         average_dff_normalized = np.mean(dff_normalized_8_roi,axis = 1)
         signal_threshold_1_sd = np.mean(average_dff_normalized) + np.std(average_dff_normalized)
         signal_threshold_1_sd_weak = np.mean(average_dff_normalized) - np.std(average_dff_normalized)
-        current_strong_signal_index = strong_signal_index(average_dff_normalized, signal_threshold_1_sd ,volume_time, 0.5)
+        current_strong_signal_index = strong_signal_index(average_dff_normalized, 0,volume_time, 0.5)
         current_weak_signal_index = weak_signal_index(average_dff_normalized, signal_threshold_1_sd_weak  ,volume_time, 0.5)
-        
+        current_strong_signal_index_0_5 = strong_signal_index(average_dff_normalized, 0 ,volume_time, 0.5)
         current_strong_PVA_behavior_state = get_behavior_state_of_strong_PVA(current_strong_PVA_index,behavior_state_frame_index)
-        
-        current_strong_signal_bump_shape = get_bump_shape_at_strong_signal(df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI,current_strong_signal_index,8)
-        
-        current_weak_signal_bump_shape = get_bump_shape_at_strong_signal(df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI,current_weak_signal_index,8)
         
         current_strong_signal_PVA = get_PVA_at_strong_signal(PVA_Angle, current_strong_signal_index)
        
@@ -1877,39 +2211,11 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         # 3.5: Get Bump_width information
         #raw_data_16_ROI_z = zscore(raw_data_16_ROI, axis=1)
         #dff_16_roi_z = zscore(dff_16_roi, axis=1)
-        Bump_width = calculateBumpWidth_v1(dff_16_roi, 16)
-        
-        if dual_imaging == 1:
-            Bump_width_red = calculateBumpWidth_v1(dff_normalized_8_roi_red, 8)
+        Bump_width = calculateBumpWidth_v1(dff_normalized_8_roi, 8)
+                             
         
         
-        # 3.6: Get radian offset information
-        radian_offset_current = offset_calculation(Wrapped_heading, PVA_Radian, IfRadian = True)
-        radian_offset_no_stopping_period_current = []
-        for i in range(len (radian_offset_current)):
-            if np.abs(Angular_velocity[i]) >= 0.26:
-                radian_offset_no_stopping_period_current.append(radian_offset_current[i])
-        circular_va = circvar(radian_offset_no_stopping_period_current,high=np.pi, low= -np.pi)
-        output_pooled_dictionary['circular_variance'].append(circular_va)
-        if dual_imaging == 1:
-            radian_offset_red_current = offset_calculation(Wrapped_heading, PVA_Radian_red, IfRadian = True)
-            circular_va_red = circvar(radian_offset_red_current,high=np.pi, low= -np.pi)
-            output_pooled_dictionary['circular_variance_red'].append(circular_va_red)
-            
-            
-            
-        # 3.7: Get Circular Variance in a sliding window fashion 
-        #5s_ window
-        window_for_cir_var = 5
-        sliding_win_cir_var_array = sliding_window_circular_variance(radian_offset_current,behavior_state_frame_index,PVA_strength, window_for_cir_var,volume_time,step_size_frames=5)
-        output_pooled_dictionary['circular_variance_slide_window_during_walking'].append(sliding_win_cir_var_array)
-        
-        
-            
-            
-        
-        
-        # 3.8 Get Bump dynamics during the stopping period
+        # 3.6 Get Bump dynamics during the stopping period
         bump_amplitude_stopping_duration = Bump_amplitude_stopping_duration
         minimum_frame_length = int(np.ceil(bump_amplitude_stopping_duration/volume_time))
         #200ms bin size
@@ -1933,13 +2239,11 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         stopping_period_PVA_strength_current = stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,bump_amplitude_stopping_bin_size = 0.2, signal_array =PVA_strength, qualified_stop_array=qualified_stopping_index_and_length,active_period_before_len=active_period_before_len)
         bump_amplitude_v3_stopping_current = stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,bump_amplitude_stopping_bin_size = 0.2, signal_array =Bump_amplitude_V3, qualified_stop_array=qualified_stopping_index_and_length,active_period_before_len=active_period_before_len)
         bump_amplitude_v4_stopping_current = stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,bump_amplitude_stopping_bin_size = 0.2, signal_array =Bump_amplitude_V4, qualified_stop_array=qualified_stopping_index_and_length,active_period_before_len=active_period_before_len)
-        bump_width_stopping_current = stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,bump_amplitude_stopping_bin_size = 0.2, signal_array =Bump_width, qualified_stop_array=qualified_stopping_index_and_length,active_period_before_len=active_period_before_len)
         Angular_speed_current = stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,bump_amplitude_stopping_bin_size = 0.2, signal_array = Angular_speed_degrees, qualified_stop_array=qualified_stopping_index_and_length,active_period_before_len=active_period_before_len)
         
     
         stopping_period_bump_amp_v3_current = pd.DataFrame(bump_amplitude_v3_stopping_current.transpose())
         stopping_period_bump_amp_v4_current = pd.DataFrame(bump_amplitude_v4_stopping_current.transpose())
-        stopping_period_bump_width_current = pd.DataFrame(bump_width_stopping_current.transpose())
         stopping_period_PVA_strength_current = pd.DataFrame(stopping_period_PVA_strength_current.transpose())
         Angular_speed_current = pd.DataFrame(Angular_speed_current.transpose())
         
@@ -1949,7 +2253,6 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
             stopping_period_PVA_strength_current_red = stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,bump_amplitude_stopping_bin_size = 0.2, signal_array =PVA_strength_red, qualified_stop_array=qualified_stopping_index_and_length_red,active_period_before_len=active_period_before_len)
             bump_amplitude_v3_stopping_current_red = stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,bump_amplitude_stopping_bin_size = 0.2, signal_array =Bump_amplitude_V3_red, qualified_stop_array=qualified_stopping_index_and_length_red,active_period_before_len=active_period_before_len)
             bump_amplitude_v4_stopping_current_red = stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,bump_amplitude_stopping_bin_size = 0.2, signal_array =Bump_amplitude_V4_red, qualified_stop_array=qualified_stopping_index_and_length_red,active_period_before_len=active_period_before_len)
-            bump_width_stopping_current_red = stopping_period_signal_decay(volume_time, bump_amplitude_stopping_duration,bump_amplitude_stopping_bin_size = 0.2, signal_array =Bump_width_red, qualified_stop_array=qualified_stopping_index_and_length_red,active_period_before_len=active_period_before_len)
             
     
             stopping_period_bump_amp_v3_current_red = pd.DataFrame(bump_amplitude_v3_stopping_current_red.transpose())
@@ -1965,7 +2268,7 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         
         
         
-        #3.9 Data storage
+        #3.7 Data storage
         
         
         #Store the flyinformation if wants to fly-by-fly analysis later on
@@ -1982,21 +2285,13 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         if count == 0:
             output_pooled_dictionary['output_PVA_strength_pooled'] =  stopping_period_PVA_strength_current
             output_pooled_dictionary['output_bump_amplitude_V3_pooled'] = stopping_period_bump_amp_v3_current
-            output_pooled_dictionary['output_bump_amplitude_V4_pooled'] = stopping_period_bump_amp_v4_current
-            output_pooled_dictionary['output_bump_width_at_stop_pooled'] = stopping_period_bump_width_current
+            output_pooled_dictionary['output_bump_amplitude_V4_pooled'] = stopping_period_bump_amp_v4_current            
             output_pooled_dictionary['output_Angular_Speed_pooled'] = Angular_speed_current
-            output_pooled_dictionary['Average_bump_shape'] = pd.DataFrame(average_bump_shape)
-            output_pooled_dictionary['Average_bump_shape_strong_signal'] =  pd.DataFrame(current_strong_signal_bump_shape)
-            output_pooled_dictionary['Average_bump_shape_weak_signal'] =  pd.DataFrame(current_weak_signal_bump_shape)
         else:
             output_pooled_dictionary['output_PVA_strength_pooled'] = pd.concat([ output_pooled_dictionary['output_PVA_strength_pooled'],stopping_period_PVA_strength_current],ignore_index=True, axis =1)
             output_pooled_dictionary['output_bump_amplitude_V3_pooled'] = pd.concat([output_pooled_dictionary['output_bump_amplitude_V3_pooled'],stopping_period_bump_amp_v3_current],ignore_index=True, axis =1)
-            output_pooled_dictionary['output_bump_amplitude_V4_pooled'] = pd.concat([output_pooled_dictionary['output_bump_amplitude_V4_pooled'],stopping_period_bump_amp_v4_current],ignore_index=True, axis =1)
-            output_pooled_dictionary['output_bump_width_at_stop_pooled'] = pd.concat([ output_pooled_dictionary['output_bump_width_at_stop_pooled'],stopping_period_bump_width_current],ignore_index=True, axis =1)        
+            output_pooled_dictionary['output_bump_amplitude_V4_pooled'] = pd.concat([output_pooled_dictionary['output_bump_amplitude_V4_pooled'],stopping_period_bump_amp_v4_current],ignore_index=True, axis =1)            
             output_pooled_dictionary['output_Angular_Speed_pooled'] = pd.concat([output_pooled_dictionary['output_Angular_Speed_pooled'],Angular_speed_current],ignore_index=True, axis =1)      
-            output_pooled_dictionary['Average_bump_shape'] = pd.concat([output_pooled_dictionary['Average_bump_shape'] ,pd.DataFrame(average_bump_shape)],ignore_index=True, axis =1) 
-            output_pooled_dictionary['Average_bump_shape_strong_signal'] = pd.concat([output_pooled_dictionary['Average_bump_shape_strong_signal'] ,pd.DataFrame(current_strong_signal_bump_shape)],ignore_index=True, axis =1) 
-            output_pooled_dictionary['Average_bump_shape_weak_signal'] = pd.concat([output_pooled_dictionary['Average_bump_shape_weak_signal'] ,pd.DataFrame(current_weak_signal_bump_shape)],ignore_index=True, axis =1) 
     
         for i in range(len(qualified_stable_PVA_index)):
             output_pooled_dictionary['output_stable_PVA_index_pooled'].append(int(qualified_stable_PVA_index[i]))
@@ -2006,13 +2301,11 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
             if count == 0:
                 output_pooled_dictionary['output_PVA_strength_pooled_red'] =  stopping_period_PVA_strength_current_red
                 output_pooled_dictionary['output_bump_amplitude_V3_pooled_red'] = stopping_period_bump_amp_v3_current_red
-                output_pooled_dictionary['output_bump_amplitude_V4_pooled_red'] = stopping_period_bump_amp_v4_current_red
-                output_pooled_dictionary['output_bump_width_pooled_red'] = stopping_period_bump_width_current_red
+                output_pooled_dictionary['output_bump_amplitude_V4_pooled_red'] = stopping_period_bump_amp_v4_current_red           
             else:
                 output_pooled_dictionary['output_PVA_strength_pooled_red'] = pd.concat([ output_pooled_dictionary['output_PVA_strength_pooled_red'],stopping_period_PVA_strength_current_red],ignore_index=True, axis =1)
                 output_pooled_dictionary['output_bump_amplitude_V3_pooled_red'] = pd.concat([output_pooled_dictionary['output_bump_amplitude_V3_pooled_red'],stopping_period_bump_amp_v3_current_red],ignore_index=True, axis =1)
-                output_pooled_dictionary['output_bump_amplitude_V4_pooled_red'] = pd.concat([output_pooled_dictionary['output_bump_amplitude_V4_pooled_red'],stopping_period_bump_amp_v4_current_red],ignore_index=True, axis =1)
-                output_pooled_dictionary['output_bump_width_pooled_red'] = pd.concat([ output_pooled_dictionary['output_bump_width_pooled_red'],stopping_period_bump_width_current_red],ignore_index=True, axis =1)          
+                output_pooled_dictionary['output_bump_amplitude_V4_pooled_red'] = pd.concat([output_pooled_dictionary['output_bump_amplitude_V4_pooled_red'],stopping_period_bump_amp_v4_current_red],ignore_index=True, axis =1)       
     
             for i in range(len(qualified_stable_PVA_index_red)):
                 output_pooled_dictionary['output_stable_PVA_index_pooled_red'].append(int(qualified_stable_PVA_index_red[i]))
@@ -2031,24 +2324,10 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         
         PVA_angle_at_stop,second_wise_bump_drift,second_wise_dwell_difference,second_wise_absolute_bump_drift,second_wise_PVA_position = PVA_during_stopPeriod(stop_index_array = persistence_stop_index_and_length, PVA_array =PVA_Angle, volume_time=volume_time)
         PVA_strength_at_stop,second_wise_PVA_strength =             PVA_strength_during_stopPeriod(stop_index_array=persistence_stop_index_and_length,PVA_strength_array=PVA_strength, volume_time=volume_time)
-        bump_shape_at_stop_current, bump_shape_at_5s_after_stop_current, bump_shape_at_10s_after_stop_current, bump_shape_at_20s_after_stop_current,bump_shape_at_stop_more_than_10s_trial_only_current = Bump_shape_during_stopPeriod(persistence_stop_index_and_length,df_dff_in_ROI_normalized_shifted_peak_centered_8_ROI,volume_time,8)
-        max_F_at_stop_current, max_F_at_stop_10s_later= max_raw_F_during_stopPeriod(persistence_stop_index_and_length,raw_F_max,volume_time)
-        output_pooled_dictionary['max_Raw_F_at_stop'].append(max_F_at_stop_current)
-        output_pooled_dictionary['max_Raw_F_at_10s_after_stop'].append(max_F_at_stop_10s_later)
+        PVA_strength_at_stop_norm,second_wise_PVA_strength_norm =             PVA_strength_during_stopPeriod(stop_index_array=persistence_stop_index_and_length,PVA_strength_array=PVA_strength_norm, volume_time=volume_time)
+       
 
             
-        if count == 0:
-            output_pooled_dictionary['Bump_shape_at_stop'] = pd.DataFrame(bump_shape_at_stop_current)
-            output_pooled_dictionary['Bump_shape_at_5s_after_stop'] = pd.DataFrame(bump_shape_at_5s_after_stop_current)
-            output_pooled_dictionary['Bump_shape_at_10s_after_stop'] = pd.DataFrame(bump_shape_at_10s_after_stop_current)
-            output_pooled_dictionary['Bump_shape_at_20s_after_stop'] = pd.DataFrame(bump_shape_at_20s_after_stop_current)
-            output_pooled_dictionary['Bump_shape_at_stop_more_than_10s_trial_only'] = pd.DataFrame(bump_shape_at_stop_more_than_10s_trial_only_current)
-        else:
-            output_pooled_dictionary['Bump_shape_at_stop'] = pd.concat([output_pooled_dictionary['Bump_shape_at_stop'] ,pd.DataFrame(bump_shape_at_stop_current)],ignore_index=True, axis =1) 
-            output_pooled_dictionary['Bump_shape_at_5s_after_stop'] = pd.concat([output_pooled_dictionary['Bump_shape_at_5s_after_stop'] ,pd.DataFrame(bump_shape_at_5s_after_stop_current)],ignore_index=True, axis =1) 
-            output_pooled_dictionary['Bump_shape_at_10s_after_stop'] = pd.concat([output_pooled_dictionary['Bump_shape_at_10s_after_stop'] ,pd.DataFrame(bump_shape_at_10s_after_stop_current)],ignore_index=True, axis =1) 
-            output_pooled_dictionary['Bump_shape_at_20s_after_stop'] = pd.concat([output_pooled_dictionary['Bump_shape_at_20s_after_stop'] ,pd.DataFrame(bump_shape_at_20s_after_stop_current)],ignore_index=True, axis =1) 
-            output_pooled_dictionary['Bump_shape_at_stop_more_than_10s_trial_only'] = pd.concat([output_pooled_dictionary['Bump_shape_at_stop_more_than_10s_trial_only'] ,pd.DataFrame(bump_shape_at_stop_more_than_10s_trial_only_current)],ignore_index=True, axis =1) 
         
         
        
@@ -2073,10 +2352,15 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
             output_pooled_dictionary['output_second_wise_absolute_bump_drift'][key] = []
             output_pooled_dictionary['output_second_wise_bump_dwell_difference'][key] = []            
             output_pooled_dictionary['output_second_wise_PVA_strength'][key]  = []
+            output_pooled_dictionary['output_second_wise_PVA_strength_norm'][key]  = []
             output_pooled_dictionary['PVA_at_strong_signal'][key]  = []
             output_pooled_dictionary['dff_8_roi_at_stop'][key]  = []
             output_pooled_dictionary['PVA_strength_frame_wise_at_stop'][key]  = []
             output_pooled_dictionary['PVA_Angle_frame_wise_at_stop'][key]  = []
+            output_pooled_dictionary['dff_8_roi_5s_before_stop'][key]  = []
+            output_pooled_dictionary['PVA_strength_frame_wise_5s_before_stop'][key]  = []
+            output_pooled_dictionary['PVA_Angle_frame_wise_5s_before_stop'][key]  = []
+            output_pooled_dictionary['Frame_time'][key]  = []
         output_pooled_dictionary['output_second_wise_bump_drift'][single_trial_info[0]].append(second_wise_bump_drift)
         output_pooled_dictionary['output_second_wise_absolute_bump_drift'][single_trial_info[0]].append(second_wise_absolute_bump_drift)
         output_pooled_dictionary['output_second_wise_bump_drift_at_stop_thresholded'][single_trial_info[0]].append(second_wise_bump_drift_rate_at_stop_strength_threshold)
@@ -2090,10 +2374,15 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         output_pooled_dictionary['output_second_wise_PVA_position_right_before_stop'][single_trial_info[0]].append(second_wise_PVA_position_before_stop)
         output_pooled_dictionary['output_second_wise_bump_dwell_difference'][single_trial_info[0]].append(second_wise_dwell_difference)
         output_pooled_dictionary['output_second_wise_PVA_strength'][single_trial_info[0]].append(second_wise_PVA_strength)
+        output_pooled_dictionary['output_second_wise_PVA_strength_norm'][single_trial_info[0]].append(second_wise_PVA_strength_norm)
         output_pooled_dictionary['PVA_at_strong_signal'][single_trial_info[0]].append(current_strong_signal_PVA)
         output_pooled_dictionary['dff_8_roi_at_stop'][single_trial_info[0]].append(dff_8_roi_at_stop_current)
         output_pooled_dictionary['PVA_strength_frame_wise_at_stop'][single_trial_info[0]].append(PVA_strength_at_stop_frame_wise_current)
         output_pooled_dictionary['PVA_Angle_frame_wise_at_stop'][single_trial_info[0]].append(PVA_Angle_at_stop_frame_wise_current)
+        output_pooled_dictionary['dff_8_roi_5s_before_stop'][single_trial_info[0]].append(dff_8_roi_before_stop_current)
+        output_pooled_dictionary['PVA_strength_frame_wise_5s_before_stop'][single_trial_info[0]].append(PVA_strength_before_stop_frame_wise_current)
+        output_pooled_dictionary['PVA_Angle_frame_wise_5s_before_stop'][single_trial_info[0]].append(PVA_Angle_before_stop_frame_wise_current)
+        output_pooled_dictionary['Frame_time'][single_trial_info[0]].append(volume_time)
         
         
         
@@ -2101,7 +2390,7 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         PVA_angle_at_stop.insert(1,'Genotype',genotype)
         PVA_angle_at_stop.insert(2,'TrialType',trial_condition)
         Forward_speed_at_stop = forwrad_speed_during_stopPeriod(stop_index_array=persistence_stop_index_and_length,forward_speed_array=Forward_speed_degrees, volume_time=volume_time)
-        Bump_amplitude_at_stop = bump_amplitude_during_stopPeriod(stop_index_array=persistence_stop_index_and_length,bump_amplitude_array=Bump_amplitude_V4, volume_time=volume_time)
+        Bump_amplitude_at_stop = bump_amplitude_during_stopPeriod(stop_index_array=persistence_stop_index_and_length,bump_amplitude_array=Bump_amplitude_V3, volume_time=volume_time)
         output_df = pd.concat([PVA_angle_at_stop,Forward_speed_at_stop,Bump_amplitude_at_stop, PVA_strength_at_stop,Angular_speed_at_stop], axis=1)
     
         if count == 0:
@@ -2109,11 +2398,7 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         else:
             output_pooled_dictionary['output_df_pooled'] = pd.concat([output_pooled_dictionary['output_df_pooled'],output_df], ignore_index=True)
         
-        
-        
-        if  key_for_heading_PVA_offset not in output_pooled_dictionary['output_PVA_heading_offset']:
-            output_pooled_dictionary['output_PVA_heading_offset'][key_for_heading_PVA_offset] = []
-        output_pooled_dictionary['output_PVA_heading_offset'][key_for_heading_PVA_offset].append(radian_offset_current)
+     
         
         
         
@@ -2122,7 +2407,7 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
             PVA_angle_at_stop_red.insert(0,'FlyTrial',"-".join(flytrial))
             PVA_angle_at_stop_red.insert(1,'Genotype',genotype)
             PVA_angle_at_stop_red.insert(2,'TrialType',trial_condition)
-            Bump_amplitude_at_stop_red = bump_amplitude_during_stopPeriod(stop_index_array=persistence_stop_index_and_length,bump_amplitude_array=Bump_amplitude_V4_red, volume_time=volume_time)
+            Bump_amplitude_at_stop_red = bump_amplitude_during_stopPeriod(stop_index_array=persistence_stop_index_and_length,bump_amplitude_array=Bump_amplitude_V3_red, volume_time=volume_time)
             PVA_strength_at_stop_red =             PVA_strength_during_stopPeriod(stop_index_array=persistence_stop_index_and_length,PVA_strength_array=PVA_strength_red, volume_time=volume_time)
             output_df_red = pd.concat([PVA_angle_at_stop_red,Forward_speed_at_stop,Bump_amplitude_at_stop_red, PVA_strength_at_stop_red], axis=1)
             
