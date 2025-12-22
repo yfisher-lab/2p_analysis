@@ -7,7 +7,7 @@ from scipy.stats import zscore
 from scipy.ndimage import gaussian_filter1d
 from scipy.stats import binned_statistic
 from matplotlib import pyplot as plt
-from fly2p_function_TQ.imaging_2p_fixed_heading_period_analysis import find_stop_period_on_heading,stopping_period_signal_decay
+from fly2p_function_TQ.imaging_2p_fixed_heading_period_analysis import find_stop_period_on_heading,stopping_period_signal_decay,extract_signal_during_stop_before_after
 
 
 
@@ -54,6 +54,13 @@ def run_fixed_heading_period_analysis_across_trial_single_ROI(directory,dual_ima
     output_pooled_dictionary['stopping_period_F_bg_subtracted_pooled'] = pd.DataFrame()
     output_pooled_dictionary['stopping_period_F_pooled'] = pd.DataFrame()
     output_pooled_dictionary['stopping_period_z_pooled'] = pd.DataFrame()
+    output_pooled_dictionary['Frame_time'] = {}
+    output_pooled_dictionary['z_score_frame_wise_at_stop'] = {}
+    output_pooled_dictionary['Angular_speed_frame_wise_at_stop'] = {}
+    output_pooled_dictionary['z_score_frame_wise_5s_before_stop'] = {}
+    output_pooled_dictionary['Angular_speed_frame_wise_5s_before_stop'] = {}
+    output_pooled_dictionary['z_score_frame_wise_5s_after_stop'] = {}
+    output_pooled_dictionary['Angular_speed_frame_wise_5s_after_stop'] = {}
         
         
         
@@ -114,6 +121,12 @@ def run_fixed_heading_period_analysis_across_trial_single_ROI(directory,dual_ima
         stopping_period_Forward_speed_current = pd.DataFrame(stopping_period_Forward_speed_current.transpose())
         
         
+        #3.2 get framewise signal before,during and after stop (5s for before and after) for z-score and angular speed
+        z_score_at_stop_frame_wise_current,z_score_before_stop_frame_wise_current,z_score_after_stop_frame_wise_current = extract_signal_during_stop_before_after(persistence_stop_index_and_length, zscore_signal_background_subtracted,volume_time)
+        
+        Angular_speed_at_stop_frame_wise_current,Angular_speed_before_stop_frame_wise_current,Angular_speed_after_stop_frame_wise_current = extract_signal_during_stop_before_after(persistence_stop_index_and_length, Angular_speed_degrees,volume_time)
+        
+        
         #3.9 Data storage
         
         
@@ -143,7 +156,26 @@ def run_fixed_heading_period_analysis_across_trial_single_ROI(directory,dual_ima
             output_pooled_dictionary['stopping_Forward_Speed_pooled'] = pd.concat([ output_pooled_dictionary['stopping_Forward_Speed_pooled'],stopping_period_Forward_speed_current],ignore_index=True, axis =1)
             
             
-            
+        #Store frame wise signal data centered at stop
+        # Assuming single_trial_info[0] is your current key
+        key = single_trial_info[0]
+        
+        # Check if the key already exists in the dictionary
+        if key not in output_pooled_dictionary['z_score_frame_wise_at_stop']:
+            output_pooled_dictionary['Frame_time'][key]  = []
+            output_pooled_dictionary['z_score_frame_wise_at_stop'][key] = []
+            output_pooled_dictionary['Angular_speed_frame_wise_at_stop'][key] = []
+            output_pooled_dictionary['z_score_frame_wise_5s_before_stop'][key] = []
+            output_pooled_dictionary['Angular_speed_frame_wise_5s_before_stop'][key] = []
+            output_pooled_dictionary['z_score_frame_wise_5s_after_stop'][key] = []
+            output_pooled_dictionary['Angular_speed_frame_wise_5s_after_stop'][key] = []
+        output_pooled_dictionary['Frame_time'][single_trial_info[0]].append(volume_time)
+        output_pooled_dictionary['z_score_frame_wise_at_stop'][single_trial_info[0]].append(z_score_at_stop_frame_wise_current)
+        output_pooled_dictionary['Angular_speed_frame_wise_at_stop'][single_trial_info[0]].append(Angular_speed_at_stop_frame_wise_current)
+        output_pooled_dictionary['z_score_frame_wise_5s_before_stop'][single_trial_info[0]].append(z_score_before_stop_frame_wise_current)
+        output_pooled_dictionary['Angular_speed_frame_wise_5s_before_stop'][single_trial_info[0]].append(Angular_speed_before_stop_frame_wise_current)
+        output_pooled_dictionary['z_score_frame_wise_5s_after_stop'][single_trial_info[0]].append(z_score_after_stop_frame_wise_current)
+        output_pooled_dictionary['Angular_speed_frame_wise_5s_after_stop'][single_trial_info[0]].append(Angular_speed_after_stop_frame_wise_current)
             
         count = count + 1
         

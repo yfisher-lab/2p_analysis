@@ -494,10 +494,12 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
     restart_points_100ms_before = []
     restart_points_500ms_before = []
     restart_points_2s_before = []
+    restart_points_average_5_frame_before  = []
     stop_after_3s = []
     stop_after_5s = []
     stop_after_10s = []
     stop_after_20s = []
+    stop_after_5s_average_5_frame_before = []
     stop_after_10s_average_5_frame_before = []
     stop_after_20s_average_5_frame_before = []
     stop_after_35s = []
@@ -532,14 +534,17 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
         restart_points_100ms_before.append(PVA_array[stop_index_array[current_index,0]-frame_100ms_before])
         restart_points_500ms_before.append(PVA_array[stop_index_array[current_index,0]-frame_500ms_before+1])
         restart_points_2s_before.append(PVA_array[stop_index_array[current_index,0]-frame_2s_before+1])
+        restart_points_average_5_frame_before.append(circmean_degrees(PVA_array[(stop_index_array[current_index,0]-4):(stop_index_array[current_index,0]+1)]))
         if index_of_stop + frame_3s_after_stop - 1 <= stop_index_array[current_index,0]:
             stop_after_3s.append(PVA_array[index_of_stop + frame_3s_after_stop - 1])
         else:
             stop_after_3s.append(np.NaN)
         if index_of_stop + frame_5s_after_stop - 1 <= stop_index_array[current_index,0]:
             stop_after_5s.append(PVA_array[index_of_stop + frame_5s_after_stop - 1])
+            stop_after_5s_average_5_frame_before.append(circmean_degrees(PVA_array[(index_of_stop + frame_5s_after_stop-4):(index_of_stop + frame_5s_after_stop)]))
         else:
             stop_after_5s.append(np.NaN)
+            stop_after_5s_average_5_frame_before.append(np.NaN)
         if index_of_stop + frame_10s_after_stop - 1 <= stop_index_array[current_index,0]:
             stop_after_10s.append(PVA_array[index_of_stop + frame_10s_after_stop - 1])
             stop_after_10s_average_5_frame_before.append(circmean_degrees(PVA_array[(index_of_stop + frame_10s_after_stop-4):(index_of_stop + frame_10s_after_stop)]))
@@ -650,8 +655,10 @@ def PVA_during_stopPeriod(stop_index_array,PVA_array, volume_time):
     df_PVA_stop['PVA_500ms_before_restart'] = restart_points_500ms_before
     df_PVA_stop['PVA_in_middle'] = middle_points
     df_PVA_stop['PVA_2s_before_restart'] = restart_points_2s_before
+    df_PVA_stop['PVA_at_restart_average_5_frames_before'] = restart_points_average_5_frame_before
     df_PVA_stop['PVA_3s_after_stop'] = stop_after_3s
     df_PVA_stop['PVA_5s_after_stop'] = stop_after_5s
+    df_PVA_stop['PVA_5s_after_stop_average_5_frames_before'] = stop_after_5s_average_5_frame_before
     df_PVA_stop['PVA_10s_after_stop'] = stop_after_10s
     df_PVA_stop['PVA_10s_after_stop_average_5_frames_before'] = stop_after_10s_average_5_frame_before
     df_PVA_stop['PVA_20s_after_stop'] = stop_after_20s
@@ -1021,57 +1028,113 @@ def extract_signal_during_stop(stop_index_array, signal_array):
     return signal_during_stop
 
 
-def extract_signal_during_stop_and_before(stop_index_array, signal_array, volume_time, pre_stop_duration=5.0):
+
+def extract_signal_during_stop_before_after(
+    stop_index_array,
+    signal_array,
+    volume_time,
+    pre_stop_duration=5.0,
+    post_stop_duration=5.0
+):
     """
-    Extract signal traces during each stop period and the 5s before the stop period.
-    
-    Parameters:
-        stop_index_array (np.ndarray): shape (n_stops, 2), columns are [restart_idx, stop_duration]
-        signal_array (np.ndarray): shape (n_ROIs, n_frames) or (n_frames,), raw data
-        volume_time (float): time per frame (s)
-        pre_stop_duration (float): duration before stop to extract (default 5s)
-        
-    Returns:
-        signal_during_stop (List of np.ndarrays): signal during stop
-        signal_before_stop (List of np.ndarrays): signal 5s before stop (NaN-filled if not enough data)
+    Extract signal traces (1) during each stop period, (2) the pre-stop window
+    of length `pre_stop_duration`, and (3) the post-stop window of length
+    `post_stop_duration`.
+
+    Parameters
+    ----------
+    stop_index_array : np.ndarray, shape (n_stops, 2)
+        Columns are [restart_idx, stop_duration], where
+        - restart_idx: index of the *last* frame of the stop (inclusive)
+        - stop_duration: number of frames in the stop
+        Stop start is computed as: stop_start_idx = restart_idx - stop_duration + 1
+
+    signal_array : np.ndarray
+        Either shape (n_frames,) or (n_ROIs, n_frames).
+
+    volume_time : float
+        Seconds per frame.
+
+    pre_stop_duration : float
+        Duration (s) to extract *before* each stop. If insufficient data exists
+        before the stop, returns an array of NaNs of the expected length.
+
+    post_stop_duration : float
+        Duration (s) to extract *after* each stop. If insufficient data exists
+        after the stop, returns an array of NaNs of the expected length.
+
+    Returns
+    -------
+    signal_during_stop : list[np.ndarray]
+        Each element is the signal during the stop (variable length = stop_duration).
+        Shape per element: (n_frames_stop,) or (n_ROIs, n_frames_stop).
+
+    signal_before_stop : list[np.ndarray]
+        Each element is the fixed-length pre-stop segment of length
+        round(pre_stop_duration / volume_time). If not enough data, NaNs.
+        Shape per element: (pre_len,) or (n_ROIs, pre_len).
+
+    signal_after_stop : list[np.ndarray]
+        Each element is the fixed-length post-stop segment of length
+        round(post_stop_duration / volume_time). If not enough data, NaNs.
+        Shape per element: (post_len,) or (n_ROIs, post_len).
     """
     signal_during_stop = []
     signal_before_stop = []
+    signal_after_stop  = []
 
-    is_1d = signal_array.ndim == 1
-    pre_stop_frames = int(np.round(pre_stop_duration / volume_time))
+    is_1d = (signal_array.ndim == 1)
+    n_total_frames = signal_array.shape[-1]
+    pre_frames  = int(np.round(pre_stop_duration  / volume_time))
+    post_frames = int(np.round(post_stop_duration / volume_time))
 
     for current_index in range(len(stop_index_array)):
-        restart_idx = stop_index_array[current_index, 0]
-        stop_duration = stop_index_array[current_index, 1]
+        restart_idx   = int(stop_index_array[current_index, 0])
+        stop_duration = int(stop_index_array[current_index, 1])
         stop_start_idx = restart_idx - stop_duration + 1
 
-        # Extract during stop
+        # --- during stop (variable length = stop_duration) ---
         if is_1d:
-            segment_during = signal_array[stop_start_idx:restart_idx + 1]
+            seg_during = signal_array[stop_start_idx:restart_idx + 1]
         else:
-            segment_during = signal_array[:, stop_start_idx:restart_idx + 1]
+            seg_during = signal_array[:, stop_start_idx:restart_idx + 1]
 
-        # Extract before stop
-        before_start_idx = stop_start_idx - pre_stop_frames
-        before_end_idx = stop_start_idx
+        # --- before stop (fixed length = pre_frames) ---
+        before_start_idx = stop_start_idx - pre_frames
+        before_end_idx   = stop_start_idx  # exclusive
 
         if before_start_idx < 0:
-            # Not enough data before stop: fill with NaNs of the right shape
+            # Not enough data: return all-NaN vector/matrix of expected length
             if is_1d:
-                segment_before = np.full(pre_stop_frames, np.nan)
+                seg_before = np.full(pre_frames, np.nan)
             else:
-                segment_before = np.full((signal_array.shape[0], pre_stop_frames), np.nan)
+                seg_before = np.full((signal_array.shape[0], pre_frames), np.nan)
         else:
             if is_1d:
-                segment_before = signal_array[before_start_idx:before_end_idx]
+                seg_before = signal_array[before_start_idx:before_end_idx]
             else:
-                segment_before = signal_array[:, before_start_idx:before_end_idx]
+                seg_before = signal_array[:, before_start_idx:before_end_idx]
 
-        signal_during_stop.append(segment_during)
-        signal_before_stop.append(segment_before)
+        # --- after stop (fixed length = post_frames) ---
+        post_start_idx = restart_idx + 1            # first frame *after* stop
+        post_end_idx   = post_start_idx + post_frames  # exclusive
+        if post_end_idx > n_total_frames:
+            # Not enough data after: return all-NaN vector/matrix of expected length
+            if is_1d:
+                seg_after = np.full(post_frames, np.nan)
+            else:
+                seg_after = np.full((signal_array.shape[0], post_frames), np.nan)
+        else:
+            if is_1d:
+                seg_after = signal_array[post_start_idx:post_end_idx]
+            else:
+                seg_after = signal_array[:, post_start_idx:post_end_idx]
 
-    return signal_during_stop, signal_before_stop
+        signal_during_stop.append(seg_during)
+        signal_before_stop.append(seg_before)
+        signal_after_stop.append(seg_after)
+
+    return signal_during_stop, signal_before_stop, signal_after_stop
 
 
 
@@ -1903,13 +1966,12 @@ def extract_signal_during_entire_stop(directory, dual_imaging, Bump_amplitude_st
 
         else:
             # ----- single bridge / combined -----
-            columns = [f'F_Roi_{i}' for i in range(1, 9)]  
-            raw_data = np.column_stack([current_file[col].to_numpy() for col in columns])
+            columns = [f'Z_score_Roi_{i}' for i in range(1, 9)]  
+            z_score_data = np.column_stack([current_file[col].to_numpy() for col in columns])
 
-            z_score_data = zscore(raw_data, axis=0, nan_policy='omit')
 
             PVA, PVA_strength_normalize = PVA_radian_calcul_norm(z_score_data, volume_cycle, 8, norm="contrast")
-            PVA_radian_array_z, PVA_strength_z_scored = PVA_radian_calcul(Z_score_array_8_roi, volume_cycle, 8)
+            PVA_radian_array_z, PVA_strength_z_scored = PVA_radian_calcul(z_score_data, volume_cycle, 8)
             PVA_angle_Array = PVA_radian_to_angle(PVA)
 
             Bump_amplitude_PVA, Bump_amplitude_PVA_opposite = calcualteBumpAmplitude_V3(z_score_data, PVA)
@@ -2043,9 +2105,16 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
     output_pooled_dictionary['dff_8_roi_at_stop'] = {}
     output_pooled_dictionary['PVA_strength_frame_wise_at_stop'] = {}
     output_pooled_dictionary['PVA_Angle_frame_wise_at_stop'] = {}
+    output_pooled_dictionary['Angular_speed_frame_wise_at_stop'] = {}
     output_pooled_dictionary['dff_8_roi_5s_before_stop'] = {}
     output_pooled_dictionary['PVA_strength_frame_wise_5s_before_stop'] = {}
     output_pooled_dictionary['PVA_Angle_frame_wise_5s_before_stop'] = {}
+    output_pooled_dictionary['Angular_speed_frame_wise_5s_before_stop'] = {}
+    output_pooled_dictionary['dff_8_roi_5s_after_stop'] = {}
+    output_pooled_dictionary['PVA_strength_frame_wise_5s_after_stop'] = {}
+    output_pooled_dictionary['PVA_Angle_frame_wise_5s_after_stop'] = {}
+    output_pooled_dictionary['Angular_speed_frame_wise_5s_after_stop'] = {}
+    output_pooled_dictionary['Average_Raw_F_max'] = {}
     output_pooled_dictionary['Frame_time'] = {}
     
     if dual_imaging == 1:
@@ -2083,6 +2152,12 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         Bump_amplitude = current_file['Bump_amplitude'].values
         Unwrapped_heading = current_file['Unwrapped_Bar_Position/Heading'].values
         Wrapped_heading = current_file['Bar_Position/Heading'].values
+        
+        
+        #Raw data for average max raw f value
+        raw_data_16_ROI = np.array([current_file[f'Raw_F_{i}'] for i in range(1, 17)]).T
+        raw_f_avg_max = raw_data_16_ROI.max(axis=np.where(np.array(raw_data_16_ROI.shape) == 16)[0][0]).mean()
+
     
         if dual_imaging == 1:
             PVA_Angle_red = current_file['PVA_Angle_red'].values
@@ -2150,9 +2225,12 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         ##Part3: get signal during the stopping period
         
         #3.0 Get frame_wise signal of dff during the stop
-        dff_8_roi_at_stop_current,dff_8_roi_before_stop_current = extract_signal_during_stop_and_before(persistence_stop_index_and_length, dff_normalized_8_roi.T,volume_time)
-        PVA_strength_at_stop_frame_wise_current,PVA_strength_before_stop_frame_wise_current = extract_signal_during_stop_and_before(persistence_stop_index_and_length, PVA_strength,volume_time)
-        PVA_Angle_at_stop_frame_wise_current,PVA_Angle_before_stop_frame_wise_current = extract_signal_during_stop_and_before(persistence_stop_index_and_length, PVA_Angle,volume_time)
+        dff_8_roi_at_stop_current,dff_8_roi_before_stop_current,dff_8_roi_after_stop_current = extract_signal_during_stop_before_after(persistence_stop_index_and_length, dff_normalized_8_roi.T,volume_time)
+        PVA_strength_at_stop_frame_wise_current,PVA_strength_before_stop_frame_wise_current,PVA_strength_after_stop_frame_wise_current = extract_signal_during_stop_before_after(persistence_stop_index_and_length, PVA_strength,volume_time)
+            
+        PVA_Angle_at_stop_frame_wise_current,PVA_Angle_before_stop_frame_wise_current,PVA_Angle_after_stop_frame_wise_current = extract_signal_during_stop_before_after(persistence_stop_index_and_length, PVA_Angle,volume_time)
+        
+        Angular_speed_at_stop_frame_wise_current,Angular_speed_before_stop_frame_wise_current,Angular_speed_after_stop_frame_wise_current = extract_signal_during_stop_before_after(persistence_stop_index_and_length, Angular_speed_degrees,volume_time)
         
     
         # 3.1:Calculate annd plot difference throughout the stop period
@@ -2357,10 +2435,17 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
             output_pooled_dictionary['dff_8_roi_at_stop'][key]  = []
             output_pooled_dictionary['PVA_strength_frame_wise_at_stop'][key]  = []
             output_pooled_dictionary['PVA_Angle_frame_wise_at_stop'][key]  = []
+            output_pooled_dictionary['Angular_speed_frame_wise_at_stop'][key]  = []
             output_pooled_dictionary['dff_8_roi_5s_before_stop'][key]  = []
             output_pooled_dictionary['PVA_strength_frame_wise_5s_before_stop'][key]  = []
             output_pooled_dictionary['PVA_Angle_frame_wise_5s_before_stop'][key]  = []
+            output_pooled_dictionary['Angular_speed_frame_wise_5s_before_stop'][key]  = []
+            output_pooled_dictionary['dff_8_roi_5s_after_stop'][key]  = []
+            output_pooled_dictionary['PVA_strength_frame_wise_5s_after_stop'][key]  = []
+            output_pooled_dictionary['PVA_Angle_frame_wise_5s_after_stop'][key]  = []
+            output_pooled_dictionary['Angular_speed_frame_wise_5s_after_stop'][key]  = []
             output_pooled_dictionary['Frame_time'][key]  = []
+            output_pooled_dictionary['Average_Raw_F_max'][key]  = []
         output_pooled_dictionary['output_second_wise_bump_drift'][single_trial_info[0]].append(second_wise_bump_drift)
         output_pooled_dictionary['output_second_wise_absolute_bump_drift'][single_trial_info[0]].append(second_wise_absolute_bump_drift)
         output_pooled_dictionary['output_second_wise_bump_drift_at_stop_thresholded'][single_trial_info[0]].append(second_wise_bump_drift_rate_at_stop_strength_threshold)
@@ -2379,10 +2464,17 @@ def run_fixed_heading_period_analysis_across_trial(directory,dual_imaging,genoty
         output_pooled_dictionary['dff_8_roi_at_stop'][single_trial_info[0]].append(dff_8_roi_at_stop_current)
         output_pooled_dictionary['PVA_strength_frame_wise_at_stop'][single_trial_info[0]].append(PVA_strength_at_stop_frame_wise_current)
         output_pooled_dictionary['PVA_Angle_frame_wise_at_stop'][single_trial_info[0]].append(PVA_Angle_at_stop_frame_wise_current)
+        output_pooled_dictionary['Angular_speed_frame_wise_at_stop'][single_trial_info[0]].append(Angular_speed_at_stop_frame_wise_current)
         output_pooled_dictionary['dff_8_roi_5s_before_stop'][single_trial_info[0]].append(dff_8_roi_before_stop_current)
         output_pooled_dictionary['PVA_strength_frame_wise_5s_before_stop'][single_trial_info[0]].append(PVA_strength_before_stop_frame_wise_current)
         output_pooled_dictionary['PVA_Angle_frame_wise_5s_before_stop'][single_trial_info[0]].append(PVA_Angle_before_stop_frame_wise_current)
+        output_pooled_dictionary['Angular_speed_frame_wise_5s_before_stop'][single_trial_info[0]].append(Angular_speed_before_stop_frame_wise_current)
+        output_pooled_dictionary['dff_8_roi_5s_after_stop'][single_trial_info[0]].append(dff_8_roi_after_stop_current)
+        output_pooled_dictionary['PVA_strength_frame_wise_5s_after_stop'][single_trial_info[0]].append(PVA_strength_after_stop_frame_wise_current)
+        output_pooled_dictionary['PVA_Angle_frame_wise_5s_after_stop'][single_trial_info[0]].append(PVA_Angle_after_stop_frame_wise_current)
+        output_pooled_dictionary['Angular_speed_frame_wise_5s_after_stop'][single_trial_info[0]].append(Angular_speed_after_stop_frame_wise_current)
         output_pooled_dictionary['Frame_time'][single_trial_info[0]].append(volume_time)
+        output_pooled_dictionary['Average_Raw_F_max'][single_trial_info[0]].append(raw_f_avg_max)
         
         
         
